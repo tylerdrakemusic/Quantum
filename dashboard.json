@@ -1,0 +1,17 @@
+{
+  "project": "⟨ψ⟩Quantum",
+  "sigil": "⟨ψ⟩",
+  "dashboards": [
+    {
+      "id": "quantum-benchmarks",
+      "title": "Quantum Benchmarks",
+      "description": "Shor's algorithm benchmark results — hardware and simulator runs",
+      "type": "static_html",
+      "generator": "tools/bench_dashboard.py",
+      "output": "reports/benchmark_dashboard.html",
+      "cli": "C:\\G\\python.exe tools/bench_dashboard.py --no-open",
+      "category": "quantum",
+      "icon": "⚛️"
+    }
+  ]
+}
