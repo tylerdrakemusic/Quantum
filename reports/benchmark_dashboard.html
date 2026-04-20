@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shor's v2 Benchmark Dashboard</title>
+<style>
+  :root {
+    --hw-accent: #1a73e8;
+    --sim-accent: #e8710a;
+    --success: #0d904f;
+    --fail: #d93025;
+    --partial: #f9ab00;
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.8rem;
+    margin-bottom: 0.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  h1 .sigil { color: #a78bfa; font-size: 2rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; font-size: 0.9rem; }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+  }
+  .card h3 {
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+  }
+  .hw-card { border-top: 3px solid var(--hw-accent); }
+  .hw-card h3 { color: var(--hw-accent); }
+  .sim-card { border-top: 3px solid var(--sim-accent); }
+  .sim-card h3 { color: var(--sim-accent); }
+  .stat {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .label {
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.8rem;
+  }
+  h2 {
+    font-size: 1.3rem;
+    margin: 2rem 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+  }
+  h2.hw-heading { color: var(--hw-accent); border-color: var(--hw-accent); }
+  h2.sim-heading { color: var(--sim-accent); border-color: var(--sim-accent); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+  }
+  thead { background: var(--surface); }
+  th {
+    text-align: left;
+    padding: 0.6rem 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:hover { background: rgba(255,255,255,0.03); }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .ts { color: var(--muted); font-size: 0.85rem; }
+  .badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge.success { background: rgba(13,144,79,0.15); color: var(--success); }
+  .badge.fail { background: rgba(217,48,37,0.15); color: var(--fail); }
+  .badge.partial { background: rgba(249,171,0,0.15); color: var(--partial); }
+  .empty { color: var(--muted); font-style: italic; padding: 1rem; }
+  .footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <h1><span class="sigil">&lang;&psi;&rang;</span> Shor's v2 Benchmark Dashboard</h1>
+  <div class="subtitle">
+    Generated: 2026-04-19 16:47:40 &bull; Source: quantumpsi.db
+  </div>
+
+  
+    <div class="summary-grid">
+      <div class="card hw-card">
+        <h3>IBM Quantum Hardware</h3>
+        <div class="stat">5</div><div class="label">Total Runs</div>
+        <div class="stat">3/5</div><div class="label">Successful</div>
+        <div class="stat">361.0s</div><div class="label">Avg Time</div>
+      </div>
+      <div class="card sim-card">
+        <h3>Aer Simulator</h3>
+        <div class="stat">30</div><div class="label">Total Runs</div>
+        <div class="stat">29/30</div><div class="label">Successful</div>
+        <div class="stat">3.2s</div><div class="label">Avg Time</div>
+      </div>
+    </div>
+    
+
+  <h2 class="hw-heading">IBM Quantum Hardware</h2>
+  <table class="hw-table">
+<thead><tr>
+<th>#</th><th>Timestamp</th><th>Backend</th><th>N</th>
+<th>Qubits</th><th>Time (s)</th><th>Order r</th>
+<th>Factors</th><th>Status</th>
+</tr></thead><tbody>
+<tr>
+<td>1</td>
+<td class='ts'>unknown (pre-schema)</td>
+<td>ibm_quantum</td>
+<td>323</td>
+<td>27</td>
+<td class='num'>190.333</td>
+<td>2</td>
+<td>19 × 17</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>2</td>
+<td class='ts'>unknown (pre-schema)</td>
+<td>ibm_quantum</td>
+<td>361</td>
+<td>27</td>
+<td class='num'>314.466</td>
+<td>-1</td>
+<td>&mdash;</td>
+<td><span class="badge fail">FAILED</span></td>
+</tr>
+<tr>
+<td>3</td>
+<td class='ts'>unknown (pre-schema)</td>
+<td>ibm_quantum</td>
+<td>361</td>
+<td>27</td>
+<td class='num'>607.461</td>
+<td>-1</td>
+<td>&mdash;</td>
+<td><span class="badge fail">FAILED</span></td>
+</tr>
+<tr>
+<td>4</td>
+<td class='ts'>unknown (pre-schema)</td>
+<td>ibm_quantum</td>
+<td>299</td>
+<td>27</td>
+<td class='num'>444.059</td>
+<td>12</td>
+<td>23 × 13</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>5</td>
+<td class='ts'>unknown (pre-schema)</td>
+<td>ibm_quantum</td>
+<td>377</td>
+<td>27</td>
+<td class='num'>248.684</td>
+<td>12</td>
+<td>13 × 29</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+</tbody></table>
+
+  <h2 class="sim-heading">Aer Simulator (Local)</h2>
+  <table class="sim-table">
+<thead><tr>
+<th>#</th><th>Timestamp</th><th>Backend</th><th>N</th>
+<th>Qubits</th><th>Time (s)</th><th>Order r</th>
+<th>Factors</th><th>Status</th>
+</tr></thead><tbody>
+<tr>
+<td>1</td>
+<td class='ts'>2026-04-18T09:15:49</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>10.744</td>
+<td>2</td>
+<td>5 × 3</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>2</td>
+<td class='ts'>2026-04-18T09:59:09</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>0.911</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>3</td>
+<td class='ts'>2026-04-18T09:59:12</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>3.151</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>4</td>
+<td class='ts'>2026-04-18T09:59:17</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>2.885</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>5</td>
+<td class='ts'>2026-04-18T09:59:23</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>2.005</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>6</td>
+<td class='ts'>2026-04-18T09:59:27</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>1.697</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>7</td>
+<td class='ts'>2026-04-18T09:59:31</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>1.296</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>8</td>
+<td class='ts'>2026-04-18T09:59:35</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>2.043</td>
+<td>2</td>
+<td>5 × 3</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>9</td>
+<td class='ts'>2026-04-18T09:59:39</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>1.355</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>10</td>
+<td class='ts'>2026-04-18T09:59:43</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>1.208</td>
+<td>2</td>
+<td>5 × 3</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>11</td>
+<td class='ts'>2026-04-18T09:59:47</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>1.203</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>12</td>
+<td class='ts'>2026-04-18T10:04:46</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>1.171</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>13</td>
+<td class='ts'>2026-04-18T10:05:23</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>3.318</td>
+<td>4</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>14</td>
+<td class='ts'>2026-04-18T10:10:24</td>
+<td>aer_simulator</td>
+<td>21</td>
+<td>13</td>
+<td class='num'>0.952</td>
+<td>2</td>
+<td>3 × 7</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>15</td>
+<td class='ts'>2026-04-18T10:10:43</td>
+<td>aer_simulator</td>
+<td>15</td>
+<td>12</td>
+<td class='num'>1.387</td>
+<td>2</td>
+<td>3 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>16</td>
+<td class='ts'>2026-04-18T10:10:48</td>
+<td>aer_simulator</td>
+<td>21</td>
+<td>13</td>
+<td class='num'>1.182</td>
+<td>6</td>
+<td>7 × 3</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>17</td>
+<td class='ts'>2026-04-18T10:10:52</td>
+<td>aer_simulator</td>
+<td>33</td>
+<td>14</td>
+<td class='num'>2.452</td>
+<td>2</td>
+<td>11 × 3</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>18</td>
+<td class='ts'>2026-04-18T10:10:58</td>
+<td>aer_simulator</td>
+<td>35</td>
+<td>14</td>
+<td class='num'>0.858</td>
+<td>4</td>
+<td>7 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>19</td>
+<td class='ts'>2026-04-18T10:11:01</td>
+<td>aer_simulator</td>
+<td>51</td>
+<td>14</td>
+<td class='num'>1.015</td>
+<td>16</td>
+<td>3 × 17</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>20</td>
+<td class='ts'>2026-04-18T10:11:05</td>
+<td>aer_simulator</td>
+<td>55</td>
+<td>14</td>
+<td class='num'>3.063</td>
+<td>10</td>
+<td>5 × 11</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>21</td>
+<td class='ts'>2026-04-18T10:11:11</td>
+<td>aer_simulator</td>
+<td>77</td>
+<td>15</td>
+<td class='num'>4.159</td>
+<td>30</td>
+<td>7 × 11</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>22</td>
+<td class='ts'>2026-04-18T10:11:18</td>
+<td>aer_simulator</td>
+<td>85</td>
+<td>15</td>
+<td class='num'>1.093</td>
+<td>16</td>
+<td>5 × 17</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>23</td>
+<td class='ts'>2026-04-18T10:11:21</td>
+<td>aer_simulator</td>
+<td>91</td>
+<td>15</td>
+<td class='num'>2.278</td>
+<td>6</td>
+<td>13 × 7</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>24</td>
+<td class='ts'>2026-04-18T10:11:26</td>
+<td>aer_simulator</td>
+<td>111</td>
+<td>15</td>
+<td class='num'>2.813</td>
+<td>36</td>
+<td>3 × 37</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>25</td>
+<td class='ts'>2026-04-18T10:11:32</td>
+<td>aer_simulator</td>
+<td>119</td>
+<td>15</td>
+<td class='num'>4.54</td>
+<td>4</td>
+<td>7 × 17</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>26</td>
+<td class='ts'>2026-04-18T10:11:41</td>
+<td>aer_simulator</td>
+<td>143</td>
+<td>16</td>
+<td class='num'>8.1</td>
+<td>20</td>
+<td>11 × 13</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>27</td>
+<td class='ts'>2026-04-18T10:11:52</td>
+<td>aer_simulator</td>
+<td>155</td>
+<td>16</td>
+<td class='num'>4.735</td>
+<td>12</td>
+<td>31 × 5</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>28</td>
+<td class='ts'>2026-04-18T10:12:01</td>
+<td>aer_simulator</td>
+<td>161</td>
+<td>16</td>
+<td class='num'>5.457</td>
+<td>22</td>
+<td>7 × 23</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>29</td>
+<td class='ts'>2026-04-18T10:12:10</td>
+<td>aer_simulator</td>
+<td>187</td>
+<td>16</td>
+<td class='num'>2.178</td>
+<td>16</td>
+<td>11 × 17</td>
+<td><span class="badge success">SUCCESS</span></td>
+</tr>
+<tr>
+<td>30</td>
+<td class='ts'>2026-04-18T10:12:15</td>
+<td>aer_simulator</td>
+<td>199</td>
+<td>16</td>
+<td class='num'>16.117</td>
+<td>198</td>
+<td>&mdash;</td>
+<td><span class="badge partial">PARTIAL</span></td>
+</tr>
+</tbody></table>
+
+  <div class="footer">
+    &lang;&psi;&rang;Quantum &mdash; Benchmark Dashboard &bull; Non-interactive static report
+  </div>
+</body>
+</html>
