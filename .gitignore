@@ -1,0 +1,75 @@
+# ⟨ψ⟩Quantum .gitignore
+# FR-20260422-gitignore-sweep
+
+# Audio
+*.wav
+*.mp3
+*.flac
+*.aif
+*.aiff
+*.m4a
+*.ogg
+
+# Video
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# Binaries / executables
+*.exe
+*.dll
+
+# Quantum scratch / job outputs
+*.qasm
+qbackups/
+reports/*.json
+
+# Large image/raw formats
+*.heic
+*.psd
+*.raw
+
+# Databases (SQLite / SQLCipher)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Python
+*.pyc
+*.pyo
+*.py[cod]
+__pycache__/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+logs/
+
+# Temp / cache
+*.download
+
+# Environment & secrets
+.env
+.env.local
+*.env
+secrets.*
+*.key
+*.pem
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
