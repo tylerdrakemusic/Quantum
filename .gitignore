@@ -73,3 +73,43 @@ secrets.*
 # OS
 .DS_Store
 Thumbs.db
+
+# FR-20260423-sibling-gitignore-parity
+*.pyd
+.playwright-mcp/
+src/data/*.db
+src/data/*.db-journal
+src/data/*.db-wal
+src/data/*.db-shm
+src/data/backups/
+*.tmp
+
+# FR-20260423-sibling-gitignore-parity
+*.pyd
+.playwright-mcp/
+src/data/*.db
+src/data/*.db-journal
+src/data/*.db-wal
+src/data/*.db-shm
+src/data/backups/
+*.tmp
+
+# FR-20260423-sibling-gitignore-parity
+*.pyd
+.playwright-mcp/
+src/data/*.db
+src/data/*.db-journal
+src/data/*.db-wal
+src/data/*.db-shm
+src/data/backups/
+*.tmp
+
+# FR-20260423-sibling-gitignore-parity
+*.pyd
+.playwright-mcp/
+src/data/*.db
+src/data/*.db-journal
+src/data/*.db-wal
+src/data/*.db-shm
+src/data/backups/
+*.tmp
