@@ -1,4 +1,4 @@
-# ⚡ AGENT STARTUP DIRECTIVE — ⟨ψ⟩Quantum
+﻿# ⚡ AGENT STARTUP DIRECTIVE — ⟨ψ⟩Quantum
 
 **READ THIS FIRST.** Context bootstrap for any AI agent picking up work on the ⟨ψ⟩Quantum project.
 
@@ -18,9 +18,9 @@
 
 | Resource | Path |
 |----------|------|
-| **Project Root** | `f:\executedcode\⟨ψ⟩Quantum\` |
+| **Project Root** | `f:\⟨ψ⟩Quantum\` |
 | **Workspace Root** | `f:\` |
-| **Parent Repo** | `f:\executedcode\` (private git repo — source controlled) |
+| **Parent Repo** | `f:\` (private git repo — source controlled) |
 | **Python Executable** | `C:\G\python.exe` |
 | **Agent Definitions** | `f:\.github\agents\⟨ψ⟩quantum-*.agent.md` |
 | **Instructions** | `f:\.github\instructions\⟨ψ⟩quantum-*.instructions.md` |
@@ -34,7 +34,7 @@ All ⟨ψ⟩Quantum agents are prefixed `⟨ψ⟩quantum-` and live at `f:\.gith
 |-------|---------|
 | **⟨ψ⟩quantum-orchestrator** | Top-level coordinator. Decomposes requests, delegates, synthesizes. Default entry point. |
 | **⟨ψ⟩quantum-research** | Quantum computing literature, algorithm exploration, use-case discovery |
-| **⟨ψ⟩quantum-hygiene** | Project cleanup — archive done tasks, prune stale files |
+| **⊕workspace-hygiene** | Unified workspace hygiene — archive done tasks, prune stale files, agent infrastructure audit |
 
 > **Adding agents:** Create `f:\.github\agents\⟨ψ⟩quantum-<name>.agent.md` with a keyword-rich `description` in frontmatter.
 
@@ -53,7 +53,7 @@ All ⟨ψ⟩Quantum agents are prefixed `⟨ψ⟩quantum-` and live at `f:\.gith
 - **Cache filler:** Scheduled task `QuantumCacheFill_Monthly` runs 1st of each month at 2AM
 
 ### Backward Compatibility
-Consumer scripts in `f:\executedcode\` still import via `from quantum_rt import qhoice` etc. Thin shim files at `f:\executedcode\quantum_rt.py` and `f:\executedcode\quantum_backend.py` redirect to `⟨ψ⟩Quantum/src/core/`.
+Consumer scripts in `f:\` still import via `from quantum_rt import qhoice` etc. Thin shim files at `f:\quantum_rt.py` and `f:\quantum_backend.py` redirect to `⟨ψ⟩Quantum/src/core/`.
 
 ## 4. Key Data
 
