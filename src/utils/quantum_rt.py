@@ -17,6 +17,26 @@ raw qubit measurement results.  This module concatenates all lines into a
 single bitstream and consumes bits sequentially.  When the cache is
 exhausted it falls back to the `secrets` module transparently.
 
+Automatic fallback behaviour (CSPRNG — never silent failure)
+------------------------------------------------------------
+This module always produces random values.  There are two fallback paths,
+both of which use Python's ``secrets`` module (OS-level CSPRNG):
+
+1. **Cache absent / empty at startup** — if no ty_string_cache files are
+   found on disk, or all files contain no valid bitstrings, ``_load_bitstream``
+   returns ``""``.  The ``_BitStream`` cursor starts at position 0 of an empty
+   string, so the very first bit request immediately enters the ``secrets``
+   fallback path.  Every subsequent call also uses ``secrets``.  A WARNING is
+   logged so callers are aware that quantum entropy is unavailable.
+
+2. **Mid-stream exhaustion** — if the cache is loaded successfully but all
+   bits are consumed before the process exits, ``_BitStream._next_bits`` switches
+   to ``secrets`` for any remaining requests.  An INFO-level message is logged
+   once at the transition point.
+
+In both cases the public API surface (``qRandom``, ``qRax``, etc.) behaves
+identically; callers do not need to handle the fallback explicitly.
+
 Public API (mirrors original quantum_rt contract)
 -------------------------------------------------
     qRandom()                    → float in [0, 1)
@@ -91,6 +111,10 @@ def _load_bitstream() -> str:
     """Load and concatenate all bitstrings from the best available cache."""
     files = _find_cache_files()
     if not files:
+        # No cache files on disk at all.  Returning "" causes _BitStream to
+        # use secrets.token_bytes for every read — see fallback path (1) in
+        # the module docstring.  The WARNING below is the only indicator that
+        # quantum entropy is not available; no exception is raised.
         _logger.warning("quantum_rt: no ty_string_cache files found — using secrets fallback")
         return ""
 
@@ -106,6 +130,9 @@ def _load_bitstream() -> str:
             _logger.debug("quantum_rt: could not read %s: %s", cache_path, exc)
 
     if not bits_parts:
+        # Files existed but contained no valid '0'/'1' lines (e.g. corrupted
+        # or all non-bitstring content).  Same outcome as the no-files case:
+        # _BitStream will use secrets for every read.
         _logger.warning("quantum_rt: cache files contained no valid bitstrings")
         return ""
 
@@ -133,7 +160,10 @@ class _BitStream:
             chunk = self._bits[self._cursor : self._cursor + n]
             self._cursor += n
             return chunk
-        # Cache exhausted — fall back to secrets for remaining bits
+        # Fallback path (2): quantum cache exhausted mid-stream.  This is
+        # intentional — we switch to the OS CSPRNG (secrets.token_bytes) rather
+        # than raising or returning low-entropy values.  Logged once at INFO
+        # level so callers can observe the transition without being flooded.
         if not self._exhausted_warned:
             _logger.info(
                 "quantum_rt: cache exhausted after %d bits — using secrets fallback",
@@ -142,7 +172,7 @@ class _BitStream:
             self._exhausted_warned = True
         # secrets.token_bits is not in all Python versions; use token_bytes
         n_bytes = math.ceil(n / 8)
-        raw = secrets.token_bytes(n_bytes)
+        raw = secrets.token_bytes(n_bytes)  # OS CSPRNG — cryptographically strong
         bits = bin(int.from_bytes(raw, "big"))[2:].zfill(n_bytes * 8)
         return bits[:n]
 
