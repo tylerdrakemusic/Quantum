@@ -27,6 +27,7 @@ from math import gcd, ceil, log2
 
 # Ensure project src is on path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "src" / "utils"))
 sys.path.insert(0, str(PROJECT_ROOT / "src" / "core"))
 
 from quantum_rt import qRax
