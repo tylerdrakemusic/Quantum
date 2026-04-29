@@ -230,7 +230,7 @@ def _build_shor_circuit_n15(n_count: int = 4):
     """
     try:
         from qiskit import QuantumCircuit
-        from qiskit.circuit.library import QFT
+        from qiskit.circuit.library import QFTGate
     except ImportError:
         raise ImportError("qiskit is required: pip install qiskit qiskit-ibm-runtime")
 
@@ -267,7 +267,7 @@ def _build_shor_circuit_n15(n_count: int = 4):
         # power%4==3 case doesn't arise with powers-of-2 when r=4
 
     # Step 4: Inverse QFT on counting register
-    iqft = QFT(n_count, inverse=True, do_swaps=True)
+    iqft = QFTGate(n_count, do_swaps=True).inverse()
     qc.append(iqft, counting)
 
     # Step 5: Measure counting register
