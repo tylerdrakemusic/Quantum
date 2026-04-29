@@ -52,6 +52,21 @@ def init_db() -> None:
 
     CREATE INDEX IF NOT EXISTS idx_benchmarks_algorithm ON benchmarks(algorithm);
     CREATE INDEX IF NOT EXISTS idx_benchmarks_backend ON benchmarks(backend);
+
+    -- QPU-specific Shor's runs (FR-20260428-shors-monthly-qpu-bench)
+    CREATE TABLE IF NOT EXISTS shors_qpu_bench (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_date     TEXT    NOT NULL,
+        n_value      INTEGER NOT NULL,
+        n_qubits     INTEGER NOT NULL,
+        success      INTEGER NOT NULL,
+        factor_found TEXT,
+        qpu_seconds  REAL    NOT NULL,
+        backend      TEXT    NOT NULL,
+        notes        TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sqb_run_date ON shors_qpu_bench(run_date);
     """)
 
     conn.commit()
