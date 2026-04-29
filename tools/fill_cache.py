@@ -21,7 +21,7 @@ Usage
 Output
 ------
     f:\\⟨ψ⟩Quantum\\qbackups\\ty_string_cache_<YYYYMMDD_HHMMSS>.txt  (timestamped backup)
-    f:\\⟨ψ⟩Quantum\\src\\data\\qbackups\\ty_string_cache.txt           (live, latest)
+    f:\\⟨ψ⟩Quantum\\src\\data\\liveCache\\ty_string_cache.txt          (live, latest)
 
 Environment
 -----------
@@ -46,7 +46,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent   # f:\⟨ψ⟩Quantum\
 _BACKUP_DIR = _ROOT / "qbackups"
-_LIVE_DIR   = _ROOT / "src" / "data" / "qbackups"
+_LIVE_DIR   = _ROOT / "src" / "data" / "liveCache"
 _LIVE_CACHE = _LIVE_DIR / "ty_string_cache.txt"
 
 # ---------------------------------------------------------------------------
