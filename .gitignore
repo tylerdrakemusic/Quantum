@@ -23,6 +23,7 @@
 # Quantum scratch / job outputs
 *.qasm
 qbackups/
+src/data/qbackups/
 reports/*.json
 
 # Large image/raw formats
