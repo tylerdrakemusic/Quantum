@@ -11,7 +11,8 @@
       "output": "reports/benchmark_dashboard.html",
       "cli": "C:\\G\\python.exe tools/bench_dashboard.py --no-open",
       "category": "quantum",
-      "icon": "⚛️"
+      "icon": "⚛️",
+      "priority": 40
     }
   ]
 }
