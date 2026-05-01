@@ -86,6 +86,50 @@ def _load_qpu_runs() -> list[dict]:
         return []
 
 
+def _load_vqe_runs() -> list[dict]:
+    """Load rows from vqe_runs (may not exist yet)."""
+    try:
+        import init_db
+        conn = init_db.get_connection()
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='vqe_runs'"
+        ).fetchone()
+        if not exists:
+            conn.close()
+            return []
+        rows = conn.execute(
+            "SELECT id, run_date, molecule, bond_length_ang, n_qubits, n_pauli_terms,"
+            " ansatz, n_parameters, optimizer, final_energy, fci_reference, delta_ha,"
+            " n_evals, wall_clock_sec, backend, timestamp"
+            " FROM vqe_runs ORDER BY id DESC"
+        ).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            result.append({
+                "id":             r[0],
+                "run_date":       r[1] or "",
+                "molecule":       r[2] or "",
+                "bond_length":    r[3],
+                "n_qubits":       r[4],
+                "n_pauli_terms":  r[5],
+                "ansatz":         r[6] or "",
+                "n_parameters":   r[7],
+                "optimizer":      r[8] or "",
+                "final_energy":   r[9],
+                "fci_reference":  r[10],
+                "delta_ha":       r[11],
+                "n_evals":        r[12],
+                "wall_clock_sec": r[13],
+                "backend":        r[14] or "",
+                "timestamp":      r[15] or "",
+            })
+        return result
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] Could not load vqe_runs: {exc}")
+        return []
+
+
 def _load_bench_runs() -> list[dict]:
     """Load rows from benchmarks (sim + auto runs)."""
     try:
@@ -209,6 +253,48 @@ def _build_monthly_table(trend: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _build_vqe_table(vqe_runs: list[dict]) -> str:
+    if not vqe_runs:
+        return ("<p class='empty'>No VQE runs yet. Run "
+                "<code>python tools/bench_vqe.py</code> to add data.</p>")
+    lines = ['<table class="vqe-table">']
+    lines.append("<thead><tr>"
+                 "<th>#</th><th>Timestamp</th><th>Molecule</th><th>R&nbsp;(Å)</th>"
+                 "<th>Qubits</th><th>Pauli&nbsp;Terms</th>"
+                 "<th>Ansatz</th><th>Params</th><th>Optimizer</th>"
+                 "<th>E&nbsp;(Ha)</th><th>FCI&nbsp;(Ha)</th><th>Δ&nbsp;(Ha)</th>"
+                 "<th>Evals</th><th>Wall&nbsp;(s)</th><th>Backend</th><th>Status</th>"
+                 "</tr></thead><tbody>")
+    for r in vqe_runs:
+        delta = r["delta_ha"] or 0.0
+        chem_acc = abs(delta) < 1.6e-3
+        badge = ('<span class="badge success">CHEM&nbsp;ACC</span>' if chem_acc
+                 else '<span class="badge fail">OFF</span>')
+        bl = f"{r['bond_length']:.4f}" if r["bond_length"] is not None else "&mdash;"
+        lines.append(
+            f"<tr>"
+            f"<td>{r['id']}</td>"
+            f"<td>{_esc(r['timestamp'])}</td>"
+            f"<td><strong>{_esc(r['molecule'])}</strong></td>"
+            f"<td>{bl}</td>"
+            f"<td>{r['n_qubits']}</td>"
+            f"<td>{r['n_pauli_terms']}</td>"
+            f"<td>{_esc(r['ansatz'])}</td>"
+            f"<td>{r['n_parameters']}</td>"
+            f"<td>{_esc(r['optimizer'])}</td>"
+            f"<td>{r['final_energy']:.6f}</td>"
+            f"<td>{r['fci_reference']:.6f}</td>"
+            f"<td>{delta:.2e}</td>"
+            f"<td>{r['n_evals']}</td>"
+            f"<td>{r['wall_clock_sec']:.1f}</td>"
+            f"<td>{_esc(r['backend'])}</td>"
+            f"<td>{badge}</td>"
+            f"</tr>"
+        )
+    lines.append("</tbody></table>")
+    return "\n".join(lines)
+
+
 def _build_bench_table(bench_runs: list[dict]) -> str:
     if not bench_runs:
         return "<p class='empty'>No benchmark data.</p>"
@@ -293,6 +379,9 @@ h2 { font-size: 1.2rem; margin: 2rem 0 1rem; padding-bottom: 0.5rem; border-bott
 h2.qpu-heading { color: var(--qpu-accent); border-color: var(--qpu-accent); }
 h2.hw-heading  { color: var(--hw-accent);  border-color: var(--hw-accent); }
 h2.monthly-heading { color: #34d399; border-color: #34d399; }
+h2.vqe-heading { color: #f472b6; border-color: #f472b6; }
+.card.vqe { border-top: 3px solid #f472b6; }
+.card.vqe h3 { color: #f472b6; }
 table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 th { background: var(--surface); color: var(--muted); text-transform: uppercase;
      font-size: 0.75rem; letter-spacing: 0.04em; padding: 0.7rem 0.8rem; text-align: left; }
@@ -316,7 +405,9 @@ def generate_html(
     bench_runs: list[dict],
     trend: list[dict],
     generated_at: str,
+    vqe_runs: list[dict] | None = None,
 ) -> str:
+    vqe_runs = vqe_runs or []
     last_qpu = qpu_runs[0] if qpu_runs else None
     last_bench = bench_runs[0] if bench_runs else None
     last_ts = (last_qpu["run_date"] if last_qpu else
@@ -326,6 +417,8 @@ def generate_html(
     qpu_success = sum(1 for r in qpu_runs if r["success"])
     hw_runs = [r for r in bench_runs if not any(x in r["backend"].lower() for x in ("aer","sim","fake"))]
     sim_runs = [r for r in bench_runs if any(x in r["backend"].lower() for x in ("aer","sim","fake"))]
+    vqe_total = len(vqe_runs)
+    vqe_chem_acc = sum(1 for r in vqe_runs if r["delta_ha"] is not None and abs(r["delta_ha"]) < 1.6e-3)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -361,7 +454,17 @@ def generate_html(
     <div class="stat">{len(sim_runs)}</div>
     <h3>Aer Simulator</h3>
   </div>
+  <div class="card vqe">
+    <div class="label">VQE Runs</div>
+    <div class="stat">{vqe_total}</div>
+    <h3>Molecular (Aer)</h3>
+    <div class="label">Chem Acc</div>
+    <div class="stat" style="font-size:1.4rem">{vqe_chem_acc} / {vqe_total}</div>
+  </div>
 </div>
+
+<h2 class="vqe-heading">🧪 VQE — Molecular Simulation (Aer)</h2>
+{_build_vqe_table(vqe_runs)}
 
 <h2 class="qpu-heading">🔬 QPU Runs — Real IBM Quantum Hardware</h2>
 {_build_qpu_table(qpu_runs)}
@@ -387,11 +490,12 @@ def main() -> None:
 
     qpu_runs = _load_qpu_runs()
     bench_runs = _load_bench_runs()
+    vqe_runs = _load_vqe_runs()
     trend = _monthly_trend(qpu_runs)
     generated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    html_content = generate_html(qpu_runs, bench_runs, trend, generated_at)
+    html_content = generate_html(qpu_runs, bench_runs, trend, generated_at, vqe_runs)
     OUT_PATH.write_text(html_content, encoding="utf-8")
     print(f"Dashboard written: {OUT_PATH}")
 
