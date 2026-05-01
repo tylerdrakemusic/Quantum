@@ -26,6 +26,10 @@ qbackups/
 src/data/liveCache/
 reports/*.json
 
+# Generated dashboards (regenerate locally via tools/gen_benchmark_dashboard.py)
+# FR-20260430-quantum-dashboard-gitignore
+reports/benchmark_dashboard.html
+
 # Large image/raw formats
 *.heic
 *.psd
