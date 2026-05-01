@@ -13,6 +13,11 @@ Generates reports/benchmark_dashboard.html with:
   - QPU run monthly trend table
   - Full benchmark history (hardware + simulator)
 
+NOTE (FR-20260430-quantum-dashboard-gitignore):
+  reports/benchmark_dashboard.html is NOT tracked in git. It is a generated
+  artifact and must be regenerated locally from your own DB. Run this script
+  after any new bench run to refresh it. CI does not generate the dashboard.
+
 Usage
 -----
     python tools/gen_benchmark_dashboard.py              # generate + open
