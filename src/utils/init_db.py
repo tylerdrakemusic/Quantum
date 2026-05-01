@@ -67,6 +67,30 @@ def init_db() -> None:
     );
 
     CREATE INDEX IF NOT EXISTS idx_sqb_run_date ON shors_qpu_bench(run_date);
+
+    -- VQE molecular simulation runs (FR-20260430-vqe-aer-bench)
+    CREATE TABLE IF NOT EXISTS vqe_runs (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_date        TEXT    NOT NULL,
+        molecule        TEXT    NOT NULL,
+        bond_length_ang REAL,
+        n_qubits        INTEGER NOT NULL,
+        n_pauli_terms   INTEGER NOT NULL,
+        ansatz          TEXT    NOT NULL,
+        n_parameters    INTEGER NOT NULL,
+        optimizer       TEXT    NOT NULL,
+        final_energy    REAL    NOT NULL,
+        fci_reference   REAL    NOT NULL,
+        delta_ha        REAL    NOT NULL,
+        n_evals         INTEGER NOT NULL,
+        wall_clock_sec  REAL    NOT NULL,
+        backend         TEXT    NOT NULL,
+        timestamp       TEXT    NOT NULL,
+        created_at      TEXT    DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vqe_runs_run_date ON vqe_runs(run_date);
+    CREATE INDEX IF NOT EXISTS idx_vqe_runs_molecule ON vqe_runs(molecule);
     """)
 
     conn.commit()

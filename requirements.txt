@@ -1,0 +1,22 @@
+# ⟨ψ⟩Quantum runtime dependencies
+#
+# PySCF is intentionally NOT listed: it has no working Windows wheel and is
+# not needed at runtime. Molecular integrals come from openfermion's bundled
+# HDF5 fixtures (see src/data/molecules/).
+
+# Core Qiskit stack
+qiskit>=2.1
+qiskit-aer>=0.17
+qiskit-algorithms>=0.4
+
+# Quantum chemistry (FR-20260430-vqe-aer-bench)
+qiskit-nature>=0.7
+openfermion>=1.7
+
+# Encrypted database
+sqlcipher3-binary
+python-dotenv
+
+# Numerics
+numpy
+scipy

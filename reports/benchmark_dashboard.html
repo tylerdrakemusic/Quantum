@@ -49,6 +49,9 @@ h2 { font-size: 1.2rem; margin: 2rem 0 1rem; padding-bottom: 0.5rem; border-bott
 h2.qpu-heading { color: var(--qpu-accent); border-color: var(--qpu-accent); }
 h2.hw-heading  { color: var(--hw-accent);  border-color: var(--hw-accent); }
 h2.monthly-heading { color: #34d399; border-color: #34d399; }
+h2.vqe-heading { color: #f472b6; border-color: #f472b6; }
+.card.vqe { border-top: 3px solid #f472b6; }
+.card.vqe h3 { color: #f472b6; }
 table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 th { background: var(--surface); color: var(--muted); text-transform: uppercase;
      font-size: 0.75rem; letter-spacing: 0.04em; padding: 0.7rem 0.8rem; text-align: left; }
@@ -70,81 +73,52 @@ code { background: var(--surface); border: 1px solid var(--border);
 <h1><span class="sigil">⟨ψ⟩</span>Quantum Benchmark Dashboard</h1>
 <div class="subtitle">Shor's Algorithm — IBM Quantum QPU + Simulator Runs</div>
 <div class="last-run">
-  Last QPU run: <span class="ts">2026-04-28T21:01:33Z</span>
-  &nbsp;·&nbsp; Dashboard generated: <span class="ts">2026-04-29T03:06:55Z</span>
+  Last QPU run: <span class="ts">never</span>
+  &nbsp;·&nbsp; Dashboard generated: <span class="ts">2026-05-01T01:42:33Z</span>
 </div>
 
 <div class="summary-grid">
   <div class="card qpu">
     <div class="label">QPU Runs</div>
-    <div class="stat">1</div>
+    <div class="stat">0</div>
     <h3>Real Hardware</h3>
     <div class="label">Successes</div>
-    <div class="stat" style="font-size:1.4rem">1 / 1</div>
+    <div class="stat" style="font-size:1.4rem">0 / 0</div>
   </div>
   <div class="card hw">
     <div class="label">Bench (HW)</div>
-    <div class="stat">5</div>
+    <div class="stat">0</div>
     <h3>IBM Hardware</h3>
   </div>
   <div class="card sim">
     <div class="label">Bench (Sim)</div>
-    <div class="stat">30</div>
+    <div class="stat">0</div>
     <h3>Aer Simulator</h3>
+  </div>
+  <div class="card vqe">
+    <div class="label">VQE Runs</div>
+    <div class="stat">2</div>
+    <h3>Molecular (Aer)</h3>
+    <div class="label">Chem Acc</div>
+    <div class="stat" style="font-size:1.4rem">2 / 2</div>
   </div>
 </div>
 
-<h2 class="qpu-heading">🔬 QPU Runs — Real IBM Quantum Hardware</h2>
-<table class="hw-table">
-<thead><tr><th>#</th><th>Date (UTC)</th><th>Backend</th><th>N</th><th>Qubits</th><th>QPU&nbsp;(s)</th><th>Result</th><th>Notes</th></tr></thead><tbody>
-<tr><td>1</td><td>2026-04-28T21:01:33Z</td><td>ibm_fez</td><td>15</td><td>8</td><td>8.1</td><td><span class="badge success">✓ 3,5</span></td><td class='notes'>a=7, N_COUNT=4, phases=[0.25,0.75,0.5], r=4, factors=3x5, job=d7on91mdvl0c738o1sdg</td></tr>
+<h2 class="vqe-heading">🧪 VQE — Molecular Simulation (Aer)</h2>
+<table class="vqe-table">
+<thead><tr><th>#</th><th>Timestamp</th><th>Molecule</th><th>R&nbsp;(Å)</th><th>Qubits</th><th>Pauli&nbsp;Terms</th><th>Ansatz</th><th>Params</th><th>Optimizer</th><th>E&nbsp;(Ha)</th><th>FCI&nbsp;(Ha)</th><th>Δ&nbsp;(Ha)</th><th>Evals</th><th>Wall&nbsp;(s)</th><th>Backend</th><th>Status</th></tr></thead><tbody>
+<tr><td>2</td><td>2026-04-30T19:27:00</td><td><strong>LiH</strong></td><td>1.4500</td><td>10</td><td>631</td><td>UCCSD</td><td>92</td><td>SLSQP</td><td>-7.880973</td><td>-7.880982</td><td>8.85e-06</td><td>1223</td><td>931.6</td><td>aer_statevector</td><td><span class="badge success">CHEM&nbsp;ACC</span></td></tr>
+<tr><td>1</td><td>2026-04-30T19:26:58</td><td><strong>H2</strong></td><td>0.7414</td><td>2</td><td>5</td><td>UCCSD</td><td>3</td><td>SLSQP</td><td>-1.137270</td><td>-1.137270</td><td>0.00e+00</td><td>13</td><td>0.0</td><td>aer_statevector</td><td><span class="badge success">CHEM&nbsp;ACC</span></td></tr>
 </tbody></table>
+
+<h2 class="qpu-heading">🔬 QPU Runs — Real IBM Quantum Hardware</h2>
+<p class='empty'>No QPU benchmark runs yet. Run <code>tools/run_shors_bench.py</code> to add data.</p>
 
 <h2 class="monthly-heading">📅 Monthly QPU Trend</h2>
-<table class="monthly-table">
-<thead><tr><th>Month</th><th>Runs</th><th>Successes</th><th>Success&nbsp;Rate</th><th>Total QPU (s)</th><th>Backends</th></tr></thead><tbody>
-<tr><td>2026-04</td><td>1</td><td>1</td><td>100%</td><td>8.1</td><td>ibm_fez</td></tr>
-</tbody></table>
+<p class='empty'>No monthly data yet.</p>
 
 <h2 class="hw-heading">📊 Full Benchmark History (Shor's v2)</h2>
-<table class="bench-table">
-<thead><tr><th>#</th><th>Timestamp</th><th>Algorithm</th><th>Backend</th><th>N</th><th>Qubits</th><th>Time&nbsp;(s)</th><th>Order&nbsp;r</th><th>Factors</th><th>Status</th></tr></thead><tbody>
-<tr class='sim'><td>51</td><td>2026-04-18T10:12:15</td><td>shors_v2</td><td>aer_simulator</td><td>199</td><td>16</td><td>16.117</td><td>198</td><td>&mdash;</td><td><span class="badge fail">FAILED</span></td></tr>
-<tr class='sim'><td>50</td><td>2026-04-18T10:12:10</td><td>shors_v2</td><td>aer_simulator</td><td>187</td><td>16</td><td>2.178</td><td>16</td><td>11×17</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>49</td><td>2026-04-18T10:12:01</td><td>shors_v2</td><td>aer_simulator</td><td>161</td><td>16</td><td>5.457</td><td>22</td><td>7×23</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>48</td><td>2026-04-18T10:11:52</td><td>shors_v2</td><td>aer_simulator</td><td>155</td><td>16</td><td>4.735</td><td>12</td><td>31×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>47</td><td>2026-04-18T10:11:41</td><td>shors_v2</td><td>aer_simulator</td><td>143</td><td>16</td><td>8.100</td><td>20</td><td>11×13</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>46</td><td>2026-04-18T10:11:32</td><td>shors_v2</td><td>aer_simulator</td><td>119</td><td>15</td><td>4.540</td><td>4</td><td>7×17</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>45</td><td>2026-04-18T10:11:26</td><td>shors_v2</td><td>aer_simulator</td><td>111</td><td>15</td><td>2.813</td><td>36</td><td>3×37</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>44</td><td>2026-04-18T10:11:21</td><td>shors_v2</td><td>aer_simulator</td><td>91</td><td>15</td><td>2.278</td><td>6</td><td>13×7</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>43</td><td>2026-04-18T10:11:18</td><td>shors_v2</td><td>aer_simulator</td><td>85</td><td>15</td><td>1.093</td><td>16</td><td>5×17</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>42</td><td>2026-04-18T10:11:11</td><td>shors_v2</td><td>aer_simulator</td><td>77</td><td>15</td><td>4.159</td><td>30</td><td>7×11</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>41</td><td>2026-04-18T10:11:05</td><td>shors_v2</td><td>aer_simulator</td><td>55</td><td>14</td><td>3.063</td><td>10</td><td>5×11</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>40</td><td>2026-04-18T10:11:01</td><td>shors_v2</td><td>aer_simulator</td><td>51</td><td>14</td><td>1.015</td><td>16</td><td>3×17</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>39</td><td>2026-04-18T10:10:58</td><td>shors_v2</td><td>aer_simulator</td><td>35</td><td>14</td><td>0.858</td><td>4</td><td>7×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>38</td><td>2026-04-18T10:10:52</td><td>shors_v2</td><td>aer_simulator</td><td>33</td><td>14</td><td>2.452</td><td>2</td><td>11×3</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>37</td><td>2026-04-18T10:10:48</td><td>shors_v2</td><td>aer_simulator</td><td>21</td><td>13</td><td>1.182</td><td>6</td><td>7×3</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>36</td><td>2026-04-18T10:10:43</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>1.387</td><td>2</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>35</td><td>2026-04-18T10:10:24</td><td>shors_v2</td><td>aer_simulator</td><td>21</td><td>13</td><td>0.952</td><td>2</td><td>3×7</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>26</td><td>2026-04-18T10:05:23</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>3.318</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>17</td><td>2026-04-18T10:04:46</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>1.171</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>16</td><td>2026-04-18T09:59:47</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>1.203</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>15</td><td>2026-04-18T09:59:43</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>1.208</td><td>2</td><td>5×3</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>14</td><td>2026-04-18T09:59:39</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>1.355</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>13</td><td>2026-04-18T09:59:35</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>2.043</td><td>2</td><td>5×3</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>12</td><td>2026-04-18T09:59:31</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>1.296</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>11</td><td>2026-04-18T09:59:27</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>1.697</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>10</td><td>2026-04-18T09:59:23</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>2.005</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>9</td><td>2026-04-18T09:59:17</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>2.885</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>8</td><td>2026-04-18T09:59:12</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>3.151</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>7</td><td>2026-04-18T09:59:09</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>0.911</td><td>4</td><td>3×5</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='sim'><td>6</td><td>2026-04-18T09:15:49</td><td>shors_v2</td><td>aer_simulator</td><td>15</td><td>12</td><td>10.744</td><td>2</td><td>5×3</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='hw'><td>5</td><td></td><td>shors_v2</td><td>ibm_quantum</td><td>377</td><td>27</td><td>248.684</td><td>12</td><td>13×29</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='hw'><td>4</td><td></td><td>shors_v2</td><td>ibm_quantum</td><td>299</td><td>27</td><td>444.059</td><td>12</td><td>23×13</td><td><span class="badge success">SUCCESS</span></td></tr>
-<tr class='hw'><td>3</td><td></td><td>shors_v2</td><td>ibm_quantum</td><td>361</td><td>27</td><td>607.461</td><td>-1</td><td>&mdash;</td><td><span class="badge fail">FAILED</span></td></tr>
-<tr class='hw'><td>2</td><td></td><td>shors_v2</td><td>ibm_quantum</td><td>361</td><td>27</td><td>314.466</td><td>-1</td><td>&mdash;</td><td><span class="badge fail">FAILED</span></td></tr>
-<tr class='hw'><td>1</td><td></td><td>shors_v2</td><td>ibm_quantum</td><td>323</td><td>27</td><td>190.333</td><td>2</td><td>19×17</td><td><span class="badge success">SUCCESS</span></td></tr>
-</tbody></table>
+<p class='empty'>No benchmark data.</p>
 
 <script>
 // Auto-refresh every 60 seconds when the page is open (for live monitoring)
