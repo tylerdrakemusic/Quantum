@@ -7,7 +7,24 @@ import sqlcipher3
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
-DB_PATH = Path(__file__).parent.parent / "data" / "quantumpsi.db"
+
+def _resolve_db_path() -> Path:
+    override = os.environ.get("QUANTUM_DB_PATH")
+    if override:
+        return Path(override)
+
+    default_path = Path(__file__).parent.parent / "data" / "quantumpsi.db"
+    resolved_file = Path(__file__).resolve()
+    if "worktrees" not in resolved_file.parts:
+        return default_path
+
+    canonical_path = Path(resolved_file.anchor) / "⟨ψ⟩Quantum" / "src" / "data" / "quantumpsi.db"
+    if canonical_path.exists():
+        return canonical_path
+    return default_path
+
+
+DB_PATH = _resolve_db_path()
 
 
 def get_connection() -> sqlcipher3.Connection:
