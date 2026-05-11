@@ -91,6 +91,20 @@ def init_db() -> None:
 
     CREATE INDEX IF NOT EXISTS idx_vqe_runs_run_date ON vqe_runs(run_date);
     CREATE INDEX IF NOT EXISTS idx_vqe_runs_molecule ON vqe_runs(molecule);
+
+    CREATE TABLE IF NOT EXISTS policy_events (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_time   TEXT    NOT NULL,
+        policy_id    TEXT    NOT NULL,
+        event_type   TEXT    NOT NULL,
+        status       TEXT    NOT NULL,
+        source       TEXT    NOT NULL,
+        detail       TEXT,
+        next_run_at  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_policy_events_policy_time
+        ON policy_events(policy_id, event_time);
     """)
 
     conn.commit()

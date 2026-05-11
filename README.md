@@ -72,7 +72,9 @@ from core.quantum_rt import qRandom, qRax, qhoice, quuffle, qsample, qpermute, q
 ## Data Pipeline
 
 - **IBM Quantum** → `fill_cache.py` → `ty_string_cache.txt` → consumed by `qRandomBitstring()`
-- Monthly scheduled task: `QuantumCacheFill_Monthly` (1st of month, 2:00 AM)
+- Monthly scheduled tasks (UTC, policy-defined in `src/config/execution_policy.json`):
+  - `QuantumCacheFill_Monthly` (1st of month, 01:00)
+  - `ShorsMonthlyBench` (1st of month, 02:00)
 - 10-minute monthly quota on IBM Quantum (free tier)
 - Backend: `ibm_fez` (156-qubit Eagle processor)
 - Falls back to classical random when cache is depleted
