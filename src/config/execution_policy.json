@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "timezone": "UTC",
+  "schedules": {
+    "quantum_cache_fill_monthly": {
+      "task_name": "QuantumCacheFill_Monthly",
+      "day_of_month": 1,
+      "hour": 1,
+      "minute": 0
+    },
+    "shors_monthly_benchmark": {
+      "task_name": "ShorsMonthlyBench",
+      "day_of_month": 1,
+      "hour": 2,
+      "minute": 0
+    }
+  },
+  "qpu_caps_seconds": {
+    "quantum_cache_fill_monthly": 180,
+    "shors_monthly_benchmark": 300
+  }
+}

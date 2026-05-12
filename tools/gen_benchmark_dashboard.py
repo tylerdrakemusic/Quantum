@@ -31,7 +31,7 @@ import os
 import sys
 import webbrowser
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -167,6 +167,75 @@ def _load_bench_runs() -> list[dict]:
         return []
 
 
+def _load_policy_events(limit: int = 20) -> list[dict]:
+    """Load benchmark policy observability events."""
+    try:
+        import init_db
+
+        conn = init_db.get_connection()
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='policy_events'"
+        ).fetchone()
+        if not exists:
+            conn.close()
+            return []
+        rows = conn.execute(
+            "SELECT event_time, policy_id, event_type, status, source, detail, next_run_at "
+            "FROM policy_events "
+            "WHERE policy_id='shors_monthly_benchmark' "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "event_time": r[0] or "",
+                "policy_id": r[1] or "",
+                "event_type": r[2] or "",
+                "status": r[3] or "",
+                "source": r[4] or "",
+                "detail": r[5] or "",
+                "next_run_at": r[6] or "",
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        print(f"[WARN] Could not load policy_events: {exc}")
+        return []
+
+
+def _load_schedule_policy() -> dict:
+    """Load canonical benchmark schedule policy from config."""
+    config_path = _ROOT / "src" / "config" / "execution_policy.json"
+    try:
+        import json
+
+        with open(config_path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        schedule = data.get("schedules", {}).get("shors_monthly_benchmark", {})
+        return {
+            "day": int(schedule.get("day_of_month", 1)),
+            "hour": int(schedule.get("hour", 2)),
+            "minute": int(schedule.get("minute", 0)),
+            "task_name": schedule.get("task_name", "ShorsMonthlyBench"),
+            "qpu_cap": int(data.get("qpu_caps_seconds", {}).get("shors_monthly_benchmark", 300)),
+        }
+    except Exception:
+        return {"day": 1, "hour": 2, "minute": 0, "task_name": "ShorsMonthlyBench", "qpu_cap": 300}
+
+
+def _next_run_iso(day: int, hour: int, minute: int) -> str:
+    """Compute next monthly benchmark run timestamp in UTC."""
+    now = datetime.now(timezone.utc)
+    candidate = datetime(now.year, now.month, day, hour, minute, tzinfo=timezone.utc)
+    if candidate <= now:
+        if now.month == 12:
+            candidate = datetime(now.year + 1, 1, day, hour, minute, tzinfo=timezone.utc)
+        else:
+            candidate = datetime(now.year, now.month + 1, day, hour, minute, tzinfo=timezone.utc)
+    return candidate.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Monthly trend helpers
 # ═══════════════════════════════════════════════════════════════════════════
@@ -207,6 +276,83 @@ def _badge(success: bool, factor_found: str = "") -> str:
     if success:
         return '<span class="badge success">SUCCESS</span>'
     return '<span class="badge fail">FAILED</span>'
+
+
+def _policy_badge(status: str) -> str:
+    low = (status or "").lower()
+    if low in ("succeeded", "started"):
+        return f'<span class="badge success">{_esc(low.upper())}</span>'
+    if low in ("failed", "deferred", "manual_override"):
+        return f'<span class="badge fail">{_esc(low.upper())}</span>'
+    if low in ("skipped",):
+        return f'<span class="badge warn">{_esc(low.upper())}</span>'
+    return '<span class="badge warn">UNKNOWN</span>'
+
+
+def _build_policy_panel(events: list[dict], schedule_policy: dict) -> str:
+    """Build schedule + event observability panel for benchmark policy."""
+    latest = events[0] if events else {
+        "event_type": "none",
+        "status": "unknown",
+        "event_time": "no events",
+        "detail": "No benchmark policy events logged yet.",
+        "next_run_at": "",
+    }
+    next_run = latest.get("next_run_at") or _next_run_iso(
+        schedule_policy["day"],
+        schedule_policy["hour"],
+        schedule_policy["minute"],
+    )
+
+    alert = "Operational"
+    alert_badge = '<span class="badge success">OPERATIONAL</span>'
+    if latest["status"].lower() in ("failed", "deferred", "manual_override"):
+        alert = "Attention Needed"
+        alert_badge = '<span class="badge fail">ATTENTION</span>'
+    elif latest["status"].lower() in ("skipped", "unknown"):
+        alert = "Check Policy"
+        alert_badge = '<span class="badge warn">CHECK</span>'
+
+    rows = []
+    for event in events[:6]:
+        rows.append(
+            "<tr>"
+            f"<td>{_esc(event['event_time'])}</td>"
+            f"<td>{_esc(event['event_type'])}</td>"
+            f"<td>{_policy_badge(event['status'])}</td>"
+            f"<td class='notes'>{_esc(event['detail'])}</td>"
+            "</tr>"
+        )
+    events_table = (
+        "<table class='monthly-table'><thead><tr><th>Event Time</th><th>Event</th><th>Status</th><th>Detail</th></tr></thead><tbody>"
+        + ("".join(rows) if rows else "<tr><td colspan='4' class='empty'>No events yet.</td></tr>")
+        + "</tbody></table>"
+    )
+
+    return f"""
+<div class="summary-grid">
+  <div class="card qpu">
+    <div class="label">Policy Health</div>
+    <div class="stat" style="font-size:1.2rem">{_policy_badge(latest['status'])}</div>
+    <h3>{_esc(latest['event_type'])}</h3>
+    <div class="label">{_esc(latest['event_time'])}</div>
+  </div>
+  <div class="card hw">
+    <div class="label">Next Scheduled Run (UTC)</div>
+    <div class="stat" style="font-size:1.1rem">{_esc(next_run)}</div>
+    <h3>{_esc(schedule_policy['task_name'])}</h3>
+    <div class="label">Day {schedule_policy['day']} @ {schedule_policy['hour']:02d}:{schedule_policy['minute']:02d}</div>
+  </div>
+  <div class="card sim">
+    <div class="label">Alert</div>
+    <div class="stat" style="font-size:1.1rem">{alert_badge}</div>
+    <h3>{alert}</h3>
+    <div class="label">QPU cap {schedule_policy['qpu_cap']}s</div>
+  </div>
+</div>
+<h2 class="monthly-heading">📡 Benchmark Policy Events</h2>
+{events_table}
+"""
 
 
 def _build_qpu_table(qpu_runs: list[dict]) -> str:
@@ -397,6 +543,7 @@ tr.sim td { border-left: 2px solid var(--sim-accent); }
          font-size: 0.75rem; font-weight: 600; }
 .badge.success { background: rgba(13,144,79,0.2); color: #34d399; }
 .badge.fail    { background: rgba(217,48,37,0.2);  color: #f87171; }
+.badge.warn    { background: rgba(232,113,10,0.2); color: #fdba74; }
 .notes { color: var(--muted); font-size: 0.8rem; max-width: 300px; }
 .hw-table, .monthly-table, .bench-table { margin-bottom: 2rem; }
 .empty { color: var(--muted); font-style: italic; margin: 1rem 0 2rem; }
@@ -410,6 +557,8 @@ def generate_html(
     bench_runs: list[dict],
     trend: list[dict],
     generated_at: str,
+    policy_events: list[dict],
+    schedule_policy: dict,
     vqe_runs: list[dict] | None = None,
 ) -> str:
     vqe_runs = vqe_runs or []
@@ -424,6 +573,7 @@ def generate_html(
     sim_runs = [r for r in bench_runs if any(x in r["backend"].lower() for x in ("aer","sim","fake"))]
     vqe_total = len(vqe_runs)
     vqe_chem_acc = sum(1 for r in vqe_runs if r["delta_ha"] is not None and abs(r["delta_ha"]) < 1.6e-3)
+    policy_panel = _build_policy_panel(policy_events, schedule_policy)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -440,6 +590,8 @@ def generate_html(
   Last QPU run: <span class="ts">{_esc(last_ts)}</span>
   &nbsp;·&nbsp; Dashboard generated: <span class="ts">{_esc(generated_at)}</span>
 </div>
+
+{policy_panel}
 
 <div class="summary-grid">
   <div class="card qpu">
@@ -496,11 +648,21 @@ def main() -> None:
     qpu_runs = _load_qpu_runs()
     bench_runs = _load_bench_runs()
     vqe_runs = _load_vqe_runs()
+    policy_events = _load_policy_events()
+    schedule_policy = _load_schedule_policy()
     trend = _monthly_trend(qpu_runs)
     generated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    html_content = generate_html(qpu_runs, bench_runs, trend, generated_at, vqe_runs)
+    html_content = generate_html(
+        qpu_runs,
+        bench_runs,
+        trend,
+        generated_at,
+        policy_events,
+        schedule_policy,
+        vqe_runs,
+    )
     OUT_PATH.write_text(html_content, encoding="utf-8")
     print(f"Dashboard written: {OUT_PATH}")
 

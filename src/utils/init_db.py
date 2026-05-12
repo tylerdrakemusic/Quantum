@@ -7,7 +7,24 @@ import sqlcipher3
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
-DB_PATH = Path(__file__).parent.parent / "data" / "quantumpsi.db"
+
+def _resolve_db_path() -> Path:
+    override = os.environ.get("QUANTUM_DB_PATH")
+    if override:
+        return Path(override)
+
+    default_path = Path(__file__).parent.parent / "data" / "quantumpsi.db"
+    resolved_file = Path(__file__).resolve()
+    if "worktrees" not in resolved_file.parts:
+        return default_path
+
+    canonical_path = Path(resolved_file.anchor) / "⟨ψ⟩Quantum" / "src" / "data" / "quantumpsi.db"
+    if canonical_path.exists():
+        return canonical_path
+    return default_path
+
+
+DB_PATH = _resolve_db_path()
 
 
 def get_connection() -> sqlcipher3.Connection:
@@ -91,6 +108,20 @@ def init_db() -> None:
 
     CREATE INDEX IF NOT EXISTS idx_vqe_runs_run_date ON vqe_runs(run_date);
     CREATE INDEX IF NOT EXISTS idx_vqe_runs_molecule ON vqe_runs(molecule);
+
+    CREATE TABLE IF NOT EXISTS policy_events (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_time   TEXT    NOT NULL,
+        policy_id    TEXT    NOT NULL,
+        event_type   TEXT    NOT NULL,
+        status       TEXT    NOT NULL,
+        source       TEXT    NOT NULL,
+        detail       TEXT,
+        next_run_at  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_policy_events_policy_time
+        ON policy_events(policy_id, event_time);
     """)
 
     conn.commit()

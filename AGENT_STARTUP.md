@@ -50,7 +50,9 @@ All ⟨ψ⟩Quantum agents are prefixed `⟨ψ⟩quantum-` and live at `f:\.gith
 - **Tier:** Free (10 minutes/month)
 - **Primary backend:** `ibm_fez` (156-qubit Eagle processor)
 - **Shots per circuit:** 4096
-- **Cache filler:** Scheduled task `QuantumCacheFill_Monthly` runs 1st of each month at 2AM
+- **Cache filler:** Scheduled task `QuantumCacheFill_Monthly` runs 1st of each month at 01:00 UTC
+- **Benchmark run:** Scheduled task `ShorsMonthlyBench` runs 1st of each month at 02:00 UTC
+- **Source of truth:** `src/config/execution_policy.json` (scripts/docs must read this schedule)
 
 ### Backward Compatibility
 Consumer scripts in `f:\` still import via `from quantum_rt import qhoice` etc. Thin shim files at `f:\quantum_rt.py` and `f:\quantum_backend.py` redirect to `⟨ψ⟩Quantum/src/core/`.
