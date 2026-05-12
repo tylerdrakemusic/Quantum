@@ -9,7 +9,7 @@ MAX_QPU_SECONDS to preserve remaining monthly quota for algorithm experiments.
 
 Usage
 -----
-    # Scheduled (monthly, 1st of month 2AM via QuantumCacheFill_Monthly task):
+    # Scheduled (monthly, 1st of month 01:00 UTC via QuantumCacheFill_Monthly task):
     C:\\G\\python.exe tools\\fill_cache.py
 
     # Interactive / ad-hoc:
@@ -45,6 +45,11 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 _ROOT = Path(__file__).resolve().parent.parent   # f:\⟨ψ⟩Quantum\
+sys.path.insert(0, str(_ROOT / "src" / "utils"))
+
+import execution_policy
+
+POLICY_ID = "quantum_cache_fill_monthly"
 _BACKUP_DIR = _ROOT / "qbackups"
 _LIVE_DIR   = _ROOT / "src" / "data" / "liveCache"
 _LIVE_CACHE = _LIVE_DIR / "ty_string_cache.txt"
@@ -55,7 +60,7 @@ _LIVE_CACHE = _LIVE_DIR / "ty_string_cache.txt"
 
 # Total QPU execution time to consume before stopping gracefully.
 # 3 minutes leaves 7 minutes for algorithm experiments.
-DEFAULT_MAX_QPU_SECONDS: int = 180   # 3 minutes
+DEFAULT_MAX_QPU_SECONDS: int = execution_policy.policy_qpu_cap_seconds(POLICY_ID, 180)
 
 # H-gate circuit parameters — maximises bits per job.
 # 127 qubits × 4096 shots = 520 192 bits per job.
@@ -138,6 +143,51 @@ def _counts_to_bitstrings(counts: dict[str, int]) -> list[str]:
         clean = bitstring.replace(" ", "")   # Qiskit may insert spaces
         lines.extend([clean] * count)
     return lines
+
+
+def _ensure_policy_events_table(conn) -> None:
+    """Create policy_events table for execution observability if missing."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS policy_events (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_time   TEXT    NOT NULL,
+            policy_id    TEXT    NOT NULL,
+            event_type   TEXT    NOT NULL,
+            status       TEXT    NOT NULL,
+            source       TEXT    NOT NULL,
+            detail       TEXT,
+            next_run_at  TEXT
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_policy_events_policy_time ON policy_events(policy_id, event_time)"
+    )
+    conn.commit()
+
+
+def _log_policy_event(event_type: str, status: str, detail: str) -> None:
+    """Persist one policy event for cache-fill observability."""
+    import init_db
+
+    conn = init_db.get_connection()
+    _ensure_policy_events_table(conn)
+    event_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn.execute(
+        """INSERT INTO policy_events
+               (event_time, policy_id, event_type, status, source, detail, next_run_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            event_time,
+            POLICY_ID,
+            event_type,
+            status,
+            "tools/fill_cache.py",
+            detail,
+            execution_policy.next_run_iso(POLICY_ID),
+        ),
+    )
+    conn.commit()
+    conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -341,19 +391,55 @@ def main() -> None:
         _print_status()
         sys.exit(0)
 
+    _log_policy_event(
+        event_type="run_started",
+        status="started",
+        detail=(
+            f"Started cache fill; schedule={execution_policy.schedule_label(POLICY_ID)}; "
+            f"qpu_cap={args.max_qpu_seconds}s"
+        ),
+    )
+
     try:
         bits = run_fill(
             max_qpu_seconds=args.max_qpu_seconds,
             dry_run=args.dry_run,
         )
-        if bits > 0:
+        if args.dry_run:
+            _log_policy_event(
+                event_type="run_completed",
+                status="skipped",
+                detail="Dry-run executed; no IBM submissions and no cache update.",
+            )
+        elif bits > 0:
             _logger.info("Cache fill successful. Run with --status to verify.")
+            _log_policy_event(
+                event_type="run_completed",
+                status="succeeded",
+                detail=f"Cache fill completed with {bits} bits collected.",
+            )
+        else:
+            _log_policy_event(
+                event_type="run_completed",
+                status="failed",
+                detail="Cache fill completed with zero bits; cache not updated.",
+            )
         sys.exit(0)
     except KeyboardInterrupt:
         _logger.info("Interrupted by user — partial results discarded.")
+        _log_policy_event(
+            event_type="run_completed",
+            status="deferred",
+            detail="Cache fill interrupted by user.",
+        )
         sys.exit(1)
     except Exception as exc:  # noqa: BLE001
         _logger.error("fill_cache.py failed: %s", exc)
+        _log_policy_event(
+            event_type="run_completed",
+            status="failed",
+            detail=f"Cache fill failed: {exc}",
+        )
         sys.exit(1)
 
 

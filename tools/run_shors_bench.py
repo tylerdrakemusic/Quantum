@@ -53,9 +53,13 @@ _ROOT = Path(__file__).resolve().parent.parent   # f:\⟨ψ⟩Quantum\
 sys.path.insert(0, str(_ROOT / "src" / "utils"))
 
 # ── Constants ──────────────────────────────────────────────────────────────
-MAX_QPU_SECONDS: int = 300          # 5-minute QPU cap per run
+POLICY_ID = "shors_monthly_benchmark"
 N_SHOTS: int = 4096                 # Shots per circuit submission
 N_COUNT: int = 4                    # Counting qubits for QPE (4 gives ~93.75% success)
+
+import execution_policy
+
+MAX_QPU_SECONDS: int = execution_policy.policy_qpu_cap_seconds(POLICY_ID, 300)
 
 # Candidate N values in ascending circuit-complexity order.
 # N=15 (8 qubits) always fits. N=21 (9 qubits) needs more depth.
@@ -92,6 +96,47 @@ def _ensure_qpu_bench_table(conn) -> None:
     """)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_sqb_run_date ON shors_qpu_bench(run_date)"
+    )
+    conn.commit()
+
+
+def _ensure_policy_events_table(conn) -> None:
+    """Create policy_events table for execution observability if missing."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS policy_events (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_time   TEXT    NOT NULL,
+            policy_id    TEXT    NOT NULL,
+            event_type   TEXT    NOT NULL,
+            status       TEXT    NOT NULL,
+            source       TEXT    NOT NULL,
+            detail       TEXT,
+            next_run_at  TEXT
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_policy_events_policy_time ON policy_events(policy_id, event_time)"
+    )
+    conn.commit()
+
+
+def _record_policy_event(
+    conn,
+    *,
+    policy_id: str,
+    event_type: str,
+    status: str,
+    source: str,
+    detail: str,
+    next_run_at: str,
+) -> None:
+    """Insert one policy observability event row."""
+    event_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn.execute(
+        """INSERT INTO policy_events
+               (event_time, policy_id, event_type, status, source, detail, next_run_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (event_time, policy_id, event_type, status, source, detail, next_run_at),
     )
     conn.commit()
 
@@ -474,6 +519,25 @@ def run_benchmark(
 # DB persistence
 # ═══════════════════════════════════════════════════════════════════════════
 
+def log_policy_event(*, event_type: str, status: str, detail: str) -> None:
+    """Persist one benchmark policy event for UI observability."""
+    import init_db
+
+    next_run_at = execution_policy.next_run_iso(POLICY_ID)
+    conn = init_db.get_connection()
+    _ensure_policy_events_table(conn)
+    _record_policy_event(
+        conn,
+        policy_id=POLICY_ID,
+        event_type=event_type,
+        status=status,
+        source="tools/run_shors_bench.py",
+        detail=detail,
+        next_run_at=next_run_at,
+    )
+    conn.close()
+
+
 def persist_result(result: dict) -> int:
     """Insert result into quantumpsi.db → shors_qpu_bench. Returns row id."""
     import init_db
@@ -531,11 +595,39 @@ def _parse_args() -> argparse.Namespace:
         "--dry-run", action="store_true",
         help="Build circuit and connect, but do not submit the IBM job.",
     )
+    parser.add_argument(
+        "--defer-reason",
+        type=str,
+        default="",
+        help="Log a deferred event and exit without running the benchmark.",
+    )
+    parser.add_argument(
+        "--manual-override-note",
+        type=str,
+        default="",
+        help="Optional note to log a manual override event before benchmark start.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
+
+    if args.defer_reason.strip():
+        detail = f"Deferred benchmark run: {args.defer_reason.strip()}"
+        log_policy_event(event_type="run_deferred", status="deferred", detail=detail)
+        _log.info(detail)
+        sys.exit(0)
+
+    if args.manual_override_note.strip():
+        detail = f"Manual override noted: {args.manual_override_note.strip()}"
+        log_policy_event(event_type="manual_override", status="manual_override", detail=detail)
+
+    started_detail = (
+        f"Started benchmark; schedule={execution_policy.schedule_label(POLICY_ID)}; "
+        f"qpu_cap={args.max_qpu_seconds}s"
+    )
+    log_policy_event(event_type="run_started", status="started", detail=started_detail)
 
     try:
         result = run_benchmark(
@@ -545,10 +637,20 @@ def main() -> None:
         )
     except Exception as exc:
         _log.error("Benchmark run failed: %s", exc)
+        log_policy_event(
+            event_type="run_completed",
+            status="failed",
+            detail=f"Benchmark execution failed: {exc}",
+        )
         sys.exit(1)
 
     if args.dry_run:
         _log.info("Dry run complete. No DB write, no dashboard update.")
+        log_policy_event(
+            event_type="run_completed",
+            status="skipped",
+            detail="Dry-run executed; no IBM submission and no persistence.",
+        )
         sys.exit(0)
 
     # Persist to DB
@@ -557,6 +659,11 @@ def main() -> None:
         print_db_row(row_id)
     except Exception as exc:
         _log.error("Failed to insert DB row: %s", exc)
+        log_policy_event(
+            event_type="run_completed",
+            status="failed",
+            detail=f"Benchmark succeeded but DB persistence failed: {exc}",
+        )
         sys.exit(1)
 
     # Regenerate dashboard
@@ -570,6 +677,14 @@ def main() -> None:
         _log.info("Dashboard regenerated.")
     except Exception as exc:
         _log.warning("Dashboard regeneration failed: %s", exc)
+
+    event_status = "succeeded" if result["success"] else "failed"
+    status_detail = (
+        f"Benchmark completed; success={result['success']}; "
+        f"backend={result['backend']}; qpu_seconds={result['qpu_seconds']:.1f}; "
+        f"factors={result['factor_found'] or 'none'}"
+    )
+    log_policy_event(event_type="run_completed", status=event_status, detail=status_detail)
 
     status = "SUCCESS" if result["success"] else "FAILED (no factors)"
     print(f"\n{'='*56}")
