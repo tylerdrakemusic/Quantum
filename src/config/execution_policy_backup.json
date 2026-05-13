@@ -13,12 +13,6 @@
       "day_of_month": 1,
       "hour": 2,
       "minute": 0
-    },
-    "vqe_monthly_benchmark": {
-      "task_name": "VQEMonthlyBench",
-      "day_of_month": 15,
-      "hour": 3,
-      "minute": 0
     }
   },
   "qpu_caps_seconds": {

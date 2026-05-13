@@ -167,8 +167,8 @@ def _load_bench_runs() -> list[dict]:
         return []
 
 
-def _load_policy_events(limit: int = 20) -> list[dict]:
-    """Load benchmark policy observability events."""
+def _load_policy_events(policy_id: str = "shors_monthly_benchmark", limit: int = 20) -> list[dict]:
+    """Load benchmark policy observability events for a given policy_id."""
     try:
         import init_db
 
@@ -182,9 +182,9 @@ def _load_policy_events(limit: int = 20) -> list[dict]:
         rows = conn.execute(
             "SELECT event_time, policy_id, event_type, status, source, detail, next_run_at "
             "FROM policy_events "
-            "WHERE policy_id='shors_monthly_benchmark' "
+            "WHERE policy_id=? "
             "ORDER BY id DESC LIMIT ?",
-            (limit,),
+            (policy_id, limit),
         ).fetchall()
         conn.close()
         return [
@@ -200,28 +200,47 @@ def _load_policy_events(limit: int = 20) -> list[dict]:
             for r in rows
         ]
     except Exception as exc:
-        print(f"[WARN] Could not load policy_events: {exc}")
+        print(f"[WARN] Could not load policy_events for {policy_id}: {exc}")
         return []
 
 
-def _load_schedule_policy() -> dict:
-    """Load canonical benchmark schedule policy from config."""
+def _load_schedule_policy(policy_id: str = "shors_monthly_benchmark") -> dict:
+    """Load execution schedule policy from config for a given policy_id."""
     config_path = _ROOT / "src" / "config" / "execution_policy.json"
     try:
         import json
 
         with open(config_path, encoding="utf-8") as fh:
             data = json.load(fh)
-        schedule = data.get("schedules", {}).get("shors_monthly_benchmark", {})
+        schedule = data.get("schedules", {}).get(policy_id, {})
+        if not schedule:
+            # Fallback for missing policy
+            return {
+                "day": 1,
+                "hour": 0,
+                "minute": 0,
+                "task_name": policy_id,
+                "qpu_cap": 300,
+                "missing": True,
+            }
         return {
             "day": int(schedule.get("day_of_month", 1)),
-            "hour": int(schedule.get("hour", 2)),
+            "hour": int(schedule.get("hour", 0)),
             "minute": int(schedule.get("minute", 0)),
-            "task_name": schedule.get("task_name", "ShorsMonthlyBench"),
-            "qpu_cap": int(data.get("qpu_caps_seconds", {}).get("shors_monthly_benchmark", 300)),
+            "task_name": schedule.get("task_name", policy_id),
+            "qpu_cap": int(data.get("qpu_caps_seconds", {}).get(policy_id, 300)),
+            "missing": False,
         }
-    except Exception:
-        return {"day": 1, "hour": 2, "minute": 0, "task_name": "ShorsMonthlyBench", "qpu_cap": 300}
+    except Exception as exc:
+        print(f"[WARN] Could not load schedule policy for {policy_id}: {exc}")
+        return {
+            "day": 1,
+            "hour": 0,
+            "minute": 0,
+            "task_name": policy_id,
+            "qpu_cap": 300,
+            "missing": True,
+        }
 
 
 def _next_run_iso(day: int, hour: int, minute: int) -> str:
@@ -289,8 +308,27 @@ def _policy_badge(status: str) -> str:
     return '<span class="badge warn">UNKNOWN</span>'
 
 
-def _build_policy_panel(events: list[dict], schedule_policy: dict) -> str:
-    """Build schedule + event observability panel for benchmark policy."""
+def _build_policy_panel(policy_id: str, events: list[dict], schedule_policy: dict) -> str:
+    """Build schedule + event observability panel for a benchmark policy.
+    
+    Args:
+        policy_id: Policy identifier for titles and display
+        events: List of policy event records
+        schedule_policy: Schedule dict with day, hour, minute, task_name, qpu_cap
+    """
+    # Graceful fallback if schedule is missing
+    if schedule_policy.get("missing"):
+        return f"""
+<div class="summary-grid">
+  <div class="card hw">
+    <div class="label">Policy Schedule</div>
+    <div class="stat" style="font-size:1.1rem">—</div>
+    <h3>{_esc(schedule_policy.get('task_name', policy_id))}</h3>
+    <div class="label">No schedule configured</div>
+  </div>
+</div>
+"""
+
     latest = events[0] if events else {
         "event_type": "none",
         "status": "unknown",
@@ -350,7 +388,7 @@ def _build_policy_panel(events: list[dict], schedule_policy: dict) -> str:
     <div class="label">QPU cap {schedule_policy['qpu_cap']}s</div>
   </div>
 </div>
-<h2 class="monthly-heading">📡 Benchmark Policy Events</h2>
+<h2 class="monthly-heading">📡 {_esc(policy_id)} — Policy Events</h2>
 {events_table}
 """
 
@@ -573,7 +611,14 @@ def generate_html(
     sim_runs = [r for r in bench_runs if any(x in r["backend"].lower() for x in ("aer","sim","fake"))]
     vqe_total = len(vqe_runs)
     vqe_chem_acc = sum(1 for r in vqe_runs if r["delta_ha"] is not None and abs(r["delta_ha"]) < 1.6e-3)
-    policy_panel = _build_policy_panel(policy_events, schedule_policy)
+    
+    # Load both Shor and VQE policies
+    shors_events = _load_policy_events("shors_monthly_benchmark")
+    vqe_events = _load_policy_events("vqe_monthly_benchmark")
+    vqe_schedule = _load_schedule_policy("vqe_monthly_benchmark")
+    
+    shors_policy_panel = _build_policy_panel("shors_monthly_benchmark", shors_events, schedule_policy)
+    vqe_policy_panel = _build_policy_panel("vqe_monthly_benchmark", vqe_events, vqe_schedule)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -585,13 +630,15 @@ def generate_html(
 </head>
 <body>
 <h1><span class="sigil">⟨ψ⟩</span>Quantum Benchmark Dashboard</h1>
-<div class="subtitle">Shor's Algorithm — IBM Quantum QPU + Simulator Runs</div>
+<div class="subtitle">Shor's Algorithm — IBM Quantum QPU + Simulator Runs · VQE Molecular Simulation</div>
 <div class="last-run">
   Last QPU run: <span class="ts">{_esc(last_ts)}</span>
   &nbsp;·&nbsp; Dashboard generated: <span class="ts">{_esc(generated_at)}</span>
 </div>
 
-{policy_panel}
+{shors_policy_panel}
+
+{vqe_policy_panel}
 
 <div class="summary-grid">
   <div class="card qpu">
@@ -648,8 +695,8 @@ def main() -> None:
     qpu_runs = _load_qpu_runs()
     bench_runs = _load_bench_runs()
     vqe_runs = _load_vqe_runs()
-    policy_events = _load_policy_events()
-    schedule_policy = _load_schedule_policy()
+    shors_events = _load_policy_events("shors_monthly_benchmark")
+    shors_schedule = _load_schedule_policy("shors_monthly_benchmark")
     trend = _monthly_trend(qpu_runs)
     generated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -659,8 +706,8 @@ def main() -> None:
         bench_runs,
         trend,
         generated_at,
-        policy_events,
-        schedule_policy,
+        shors_events,
+        shors_schedule,
         vqe_runs,
     )
     OUT_PATH.write_text(html_content, encoding="utf-8")
