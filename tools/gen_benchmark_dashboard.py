@@ -723,7 +723,10 @@ def generate_html(
     cache_fill_events = _load_policy_events("quantum_cache_fill_monthly")
     cache_fill_schedule = _load_schedule_policy("quantum_cache_fill_monthly")
 
-    shors_policy_panel = _build_policy_panel("shors_monthly_benchmark", shors_events, schedule_policy)
+    shors_policy_panel = _build_sync_panel(
+        "shors_monthly_benchmark", "&#128302;", "Shor's Monthly Benchmark",
+        shors_events, schedule_policy,
+    )
     cache_fill_panel = _build_sync_panel(
         "quantum_cache_fill_monthly", "&#128267;", "Quantum Entropy Cache Fill",
         cache_fill_events, cache_fill_schedule,
