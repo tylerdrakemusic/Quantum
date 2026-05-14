@@ -393,6 +393,77 @@ def _build_policy_panel(policy_id: str, events: list[dict], schedule_policy: dic
 """
 
 
+def _build_sync_panel(
+    policy_id: str,
+    icon: str,
+    title: str,
+    events: list[dict],
+    schedule_policy: dict,
+) -> str:
+    """Build a biomarker-style collapsible sync-status panel for a policy."""
+    latest = events[0] if events else None
+    latest_status = (latest["status"] if latest else "").lower()
+
+    if latest_status in ("succeeded", "started"):
+        health_cls = "success"
+        health_label = "&#10003; Healthy"
+    elif latest_status in ("failed", "deferred", "manual_override"):
+        health_cls = "fail"
+        health_label = "&#10007; Failing"
+    else:
+        health_cls = "warn"
+        health_label = "&#8631; Degraded"
+
+    last_run = _esc(latest["event_time"]) if latest else "&mdash;"
+    if latest and latest.get("next_run_at"):
+        next_run = _esc(latest["next_run_at"])
+    else:
+        next_run = _esc(_next_run_iso(
+            schedule_policy.get("day", 1),
+            schedule_policy.get("hour", 0),
+            schedule_policy.get("minute", 0),
+        ))
+
+    task_name = _esc(schedule_policy.get("task_name", policy_id))
+    qpu_cap = schedule_policy.get("qpu_cap", 300)
+
+    rows_html = ""
+    for event in events[:6]:
+        rows_html += (
+            "<tr>"
+            f"<td>{_esc(event['event_time'])}</td>"
+            f"<td>{_esc(event['event_type'])}</td>"
+            f"<td>{_policy_badge(event['status'])}</td>"
+            f"<td class='notes'>{_esc(event['detail'])}</td>"
+            "</tr>"
+        )
+    if not rows_html:
+        rows_html = "<tr class='sync-empty-row'><td colspan='4'>No events yet.</td></tr>"
+
+    return f"""<div class="sync-category">
+  <div class="sync-category-header" onclick="this.parentElement.classList.toggle('collapsed')">
+    <span class="sync-icon">{icon}</span>
+    <span class="sync-name">{_esc(title)}</span>
+    <span class="badge {health_cls}">{health_label}</span>
+    <span class="sync-chevron">&#9660;</span>
+  </div>
+  <div class="sync-category-body">
+    <div class="sync-pills">
+      <span class="sync-pill">Last run start: <strong>{last_run}</strong></span>
+      <span class="sync-pill">Next scheduled run: <strong>{next_run}</strong></span>
+      <span class="sync-pill">Policy: <strong>{task_name}</strong></span>
+      <span class="sync-pill">QPU cap: <strong>{_esc(str(qpu_cap))}s</strong></span>
+    </div>
+    <table class="sync-table">
+      <thead>
+        <tr><th>Event Time</th><th>Event Type</th><th>Status</th><th>Detail</th></tr>
+      </thead>
+      <tbody>{rows_html}</tbody>
+    </table>
+  </div>
+</div>"""
+
+
 def _build_qpu_table(qpu_runs: list[dict]) -> str:
     if not qpu_runs:
         return "<p class='empty'>No QPU benchmark runs yet. Run <code>tools/run_shors_bench.py</code> to add data.</p>"
@@ -587,6 +658,39 @@ tr.sim td { border-left: 2px solid var(--sim-accent); }
 .empty { color: var(--muted); font-style: italic; margin: 1rem 0 2rem; }
 code { background: var(--surface); border: 1px solid var(--border);
        padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+/* Sync panels — collapsible biomarker-style (FR-20260513) */
+.sync-category {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; margin-bottom: 1.5rem; overflow: hidden;
+}
+.sync-category.collapsed .sync-category-body { display: none; }
+.sync-category-header {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.9rem 1.2rem; cursor: pointer; user-select: none;
+  border-bottom: 1px solid var(--border);
+}
+.sync-category-header:hover { background: rgba(255,255,255,0.03); }
+.sync-icon { font-size: 1.25rem; }
+.sync-name { font-size: 1rem; font-weight: 600; flex: 1; }
+.sync-chevron { font-size: 0.9rem; color: var(--muted); transition: transform 0.2s ease; }
+.sync-category.collapsed .sync-chevron { transform: rotate(-90deg); }
+.sync-pills {
+  display: flex; gap: 0.5rem; flex-wrap: wrap;
+  padding: 0.9rem 1.2rem 0;
+}
+.sync-pill {
+  background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+  border-radius: 9999px; padding: 0.25rem 0.75rem;
+  font-size: 0.78rem; color: var(--muted);
+}
+.sync-pill strong { color: var(--text); }
+.sync-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 0.9rem 0 0; }
+.sync-table th {
+  background: rgba(0,0,0,0.2); color: var(--muted); text-transform: uppercase;
+  font-size: 0.75rem; letter-spacing: 0.04em; padding: 0.7rem 1.2rem; text-align: left;
+}
+.sync-table td { padding: 0.6rem 1.2rem; border-bottom: 1px solid var(--border); }
+.sync-empty-row td { color: var(--muted); font-style: italic; text-align: center; }
 """
 
 
@@ -612,13 +716,25 @@ def generate_html(
     vqe_total = len(vqe_runs)
     vqe_chem_acc = sum(1 for r in vqe_runs if r["delta_ha"] is not None and abs(r["delta_ha"]) < 1.6e-3)
     
-    # Load both Shor and VQE policies
+    # Load policies for all three schedules
     shors_events = _load_policy_events("shors_monthly_benchmark")
     vqe_events = _load_policy_events("vqe_monthly_benchmark")
     vqe_schedule = _load_schedule_policy("vqe_monthly_benchmark")
-    
-    shors_policy_panel = _build_policy_panel("shors_monthly_benchmark", shors_events, schedule_policy)
-    vqe_policy_panel = _build_policy_panel("vqe_monthly_benchmark", vqe_events, vqe_schedule)
+    cache_fill_events = _load_policy_events("quantum_cache_fill_monthly")
+    cache_fill_schedule = _load_schedule_policy("quantum_cache_fill_monthly")
+
+    shors_policy_panel = _build_sync_panel(
+        "shors_monthly_benchmark", "&#128302;", "Shor's Monthly Benchmark",
+        shors_events, schedule_policy,
+    )
+    cache_fill_panel = _build_sync_panel(
+        "quantum_cache_fill_monthly", "&#128267;", "Quantum Entropy Cache Fill",
+        cache_fill_events, cache_fill_schedule,
+    )
+    vqe_sync_panel = _build_sync_panel(
+        "vqe_monthly_benchmark", "&#129514;", "VQE Molecular Simulation",
+        vqe_events, vqe_schedule,
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -636,9 +752,11 @@ def generate_html(
   &nbsp;·&nbsp; Dashboard generated: <span class="ts">{_esc(generated_at)}</span>
 </div>
 
-{shors_policy_panel}
+{cache_fill_panel}
 
-{vqe_policy_panel}
+{vqe_sync_panel}
+
+{shors_policy_panel}
 
 <div class="summary-grid">
   <div class="card qpu">
