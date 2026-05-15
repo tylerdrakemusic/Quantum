@@ -35,7 +35,7 @@ def get_connection() -> sqlcipher3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlcipher3.connect(str(DB_PATH))
     key_hex = key.encode().hex()
-    conn.execute(f"PRAGMA key=\"x'{key_hex}'\"")
+    conn.execute(f"PRAGMA key=\"x'{key_hex}'\"")  # nosec B608 — SQLCipher key init, key from env var not user input
     conn.execute("PRAGMA cipher_page_size=4096")
     conn.execute("PRAGMA kdf_iter=256000")
     conn.execute("PRAGMA cipher_hmac_algorithm=HMAC_SHA512")
