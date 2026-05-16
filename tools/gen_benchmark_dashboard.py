@@ -465,7 +465,6 @@ def _build_sync_panel(
     title: str,
     events: list[dict],
     schedule_policy: dict,
-    extra_html: str = "",
 ) -> str:
     """Build a biomarker-style collapsible sync-status panel for a policy."""
     latest = events[0] if events else None
@@ -527,7 +526,6 @@ def _build_sync_panel(
       </thead>
       <tbody>{rows_html}</tbody>
     </table>
-    {extra_html}
   </div>
 </div>"""
 
@@ -836,10 +834,15 @@ code { background: var(--surface); border: 1px solid var(--border);
 .sync-table td { padding: 0.6rem 1.2rem; border-bottom: 1px solid var(--border); }
 .sync-empty-row td { color: var(--muted); font-style: italic; text-align: center; }
 /* Cache fullness widget — FR-20260515-quantum-cache-widget */
+.cache-fill-row {
+  display: flex; gap: 1.2rem; align-items: flex-start; margin-bottom: 1.5rem;
+}
+.cache-fill-panel { flex: 3; min-width: 0; }
+.cache-fill-sidebar { flex: 1; min-width: 200px; }
 .cache-card {
   background: var(--surface); border: 1px solid var(--border);
   border-top: 3px solid #a78bfa; border-radius: 12px; padding: 1.2rem;
-  margin-top: 1rem;
+  position: sticky; top: 1rem;
 }
 .cache-card-header {
   display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;
@@ -920,7 +923,6 @@ def generate_html(
     cache_fill_panel = _build_sync_panel(
         "quantum_cache_fill_monthly", "&#128267;", "Quantum Entropy Cache Fill",
         cache_fill_events, cache_fill_schedule,
-        extra_html=cache_widget,
     )
     vqe_sync_panel = _build_sync_panel(
         "vqe_monthly_benchmark", "&#129514;", "VQE Molecular Simulation",
@@ -943,7 +945,10 @@ def generate_html(
   &nbsp;·&nbsp; Dashboard generated: <span class="ts">{_esc(generated_at)}</span>
 </div>
 
-{cache_fill_panel}
+<div class="cache-fill-row">
+<div class="cache-fill-panel">{cache_fill_panel}</div>
+<div class="cache-fill-sidebar">{cache_widget}</div>
+</div>
 
 {vqe_sync_panel}
 
