@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import os
 import sys
 import webbrowser
@@ -253,6 +254,71 @@ def _next_run_iso(day: int, hour: int, minute: int) -> str:
         else:
             candidate = datetime(now.year, now.month + 1, day, hour, minute, tzinfo=timezone.utc)
     return candidate.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Cache widget data loader (FR-20260515-quantum-cache-widget)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _load_cache_widget_data() -> dict:
+    """Load quantum bitstring cache fullness data for the widget.
+
+    Returns dict with:
+      current_bits      -- bit count in live cache file
+      last_fill_peak    -- bit count at last fill (max JSONL remaining, or largest backup)
+      pct_consumed      -- float 0-100 representing % consumed since last fill
+      sparkline_points  -- list of (ts_str, remaining_int) from cache_usage.jsonl
+    """
+    # ── live cache bit count ──────────────────────────────────────────────
+    live_path = _ROOT / "src" / "data" / "liveCache" / "ty_string_cache.txt"
+    current_bits = 0
+    if live_path.exists():
+        text = live_path.read_text(encoding="utf-8", errors="ignore")
+        current_bits = sum(1 for c in text if c in "01")
+
+    # ── sparkline from JSONL ──────────────────────────────────────────────
+    jsonl_path = _ROOT / "src" / "data" / "cache_usage.jsonl"
+    sparkline_points: list[tuple[str, int]] = []
+    jsonl_max = 0
+    if jsonl_path.exists():
+        for raw_line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                entry = json.loads(raw_line)
+                ts = entry.get("ts", "")
+                rem = int(entry.get("remaining", 0))
+                sparkline_points.append((ts, rem))
+                if rem > jsonl_max:
+                    jsonl_max = rem
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+    # ── last fill peak ────────────────────────────────────────────────────
+    # Primary: max remaining in JSONL; fallback to largest backup if JSONL empty
+    last_fill_peak = jsonl_max
+    if last_fill_peak == 0:
+        backup_dir = _ROOT / "qbackups"
+        if backup_dir.exists():
+            for bk in sorted(backup_dir.glob("ty_string_cache_*.txt")):
+                bk_bits = bk.stat().st_size  # each char is 1 byte; size ≈ bit count
+                if bk_bits > last_fill_peak:
+                    last_fill_peak = bk_bits
+
+    # If live cache exceeds any logged peak, treat as just-filled (0% consumed)
+    last_fill_peak = max(last_fill_peak, current_bits)
+
+    pct_consumed = 0.0
+    if last_fill_peak > 0 and current_bits < last_fill_peak:
+        pct_consumed = (last_fill_peak - current_bits) / last_fill_peak * 100.0
+
+    return {
+        "current_bits": current_bits,
+        "last_fill_peak": last_fill_peak,
+        "pct_consumed": pct_consumed,
+        "sparkline_points": sparkline_points,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -590,6 +656,82 @@ def _build_bench_table(bench_runs: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _build_cache_widget(data: dict) -> str:
+    """Build the cache fullness floating card (FR-20260515-quantum-cache-widget).
+
+    Contains a depletion gauge (% consumed since last fill) and a sparkline
+    of the drain curve sourced from cache_usage.jsonl.
+    """
+    current_bits = data["current_bits"]
+    last_fill_peak = data["last_fill_peak"]
+    pct_consumed = data["pct_consumed"]
+    sparkline_points = data["sparkline_points"]
+
+    current_mb = f"{current_bits / 1_000_000:.2f}"
+    peak_mb = f"{last_fill_peak / 1_000_000:.2f}"
+    gauge_width = min(100.0, max(0.0, pct_consumed))
+
+    gauge_html = (
+        f'<div class="cache-gauge-track">'
+        f'<div class="cache-gauge-fill" style="width:{gauge_width:.1f}%"></div>'
+        f'</div>'
+        f'<div class="cache-gauge-labels">'
+        f'<span>0%</span>'
+        f'<span class="cache-gauge-pct">{pct_consumed:.1f}%</span>'
+        f'<span>100%</span>'
+        f'</div>'
+    )
+
+    sparkline_html = ""
+    if len(sparkline_points) >= 2:
+        # Downsample to ≤60 points for a clean inline SVG
+        step = max(1, len(sparkline_points) // 60)
+        sampled = sparkline_points[::step]
+        vals = [p[1] for p in sampled]
+        min_v = min(vals)
+        max_v = max(vals)
+        range_v = float(max_v - min_v) or 1.0
+        n = len(sampled)
+        W, H = 220, 48
+        pts = " ".join(
+            f"{i / (n - 1) * W:.1f},{H - (v - min_v) / range_v * H:.1f}"
+            for i, (_, v) in enumerate(sampled)
+        )
+        # date range label from first/last timestamps
+        first_day = sparkline_points[0][0][:10] if sparkline_points else ""
+        last_day = sparkline_points[-1][0][:10] if sparkline_points else ""
+        date_range = f"{first_day} → {last_day}" if first_day else "usage log"
+        sparkline_html = (
+            f'<div class="cache-sparkline-label">Drain curve ({date_range})</div>'
+            f'<svg class="cache-sparkline" viewBox="0 0 {W} {H}" preserveAspectRatio="none">'
+            f'<polyline points="{pts}" fill="none" stroke="#a78bfa"'
+            f' stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
+            f'</svg>'
+        )
+
+    return (
+        f'<div class="cache-card">'
+        f'<div class="cache-card-header">'
+        f'<span class="cache-icon">&#128267;</span>'
+        f'<span class="cache-title">Quantum Entropy Cache</span>'
+        f'</div>'
+        f'<div class="cache-stat-row">'
+        f'<div class="cache-stat">'
+        f'<div class="cache-stat-val">{current_mb}M</div>'
+        f'<div class="cache-stat-label">bits remaining</div>'
+        f'</div>'
+        f'<div class="cache-stat">'
+        f'<div class="cache-stat-val">{peak_mb}M</div>'
+        f'<div class="cache-stat-label">last fill peak</div>'
+        f'</div>'
+        f'</div>'
+        f'<div class="cache-section-label">Depletion Since Last Fill</div>'
+        f'{gauge_html}'
+        f'{sparkline_html}'
+        f'</div>'
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Dashboard renderer
 # ═══════════════════════════════════════════════════════════════════════════
@@ -691,6 +833,53 @@ code { background: var(--surface); border: 1px solid var(--border);
 }
 .sync-table td { padding: 0.6rem 1.2rem; border-bottom: 1px solid var(--border); }
 .sync-empty-row td { color: var(--muted); font-style: italic; text-align: center; }
+/* Cache fullness widget — FR-20260515-quantum-cache-widget */
+.cache-fill-row {
+  display: flex; gap: 1.2rem; align-items: flex-start; margin-bottom: 1.5rem;
+}
+.cache-fill-panel { flex: 3; min-width: 0; }
+.cache-fill-sidebar { flex: 1; min-width: 200px; }
+.cache-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-top: 3px solid #a78bfa; border-radius: 12px; padding: 1.2rem;
+  position: sticky; top: 1rem;
+}
+.cache-card-header {
+  display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;
+}
+.cache-icon { font-size: 1.2rem; }
+.cache-title { font-size: 0.95rem; font-weight: 600; color: #a78bfa; }
+.cache-stat-row {
+  display: flex; gap: 0.5rem; justify-content: space-around; margin-bottom: 1rem;
+}
+.cache-stat { text-align: center; }
+.cache-stat-val { font-size: 1.3rem; font-weight: 700; }
+.cache-stat-label {
+  color: var(--muted); font-size: 0.68rem; text-transform: uppercase;
+  letter-spacing: 0.05em; margin-top: 0.15rem;
+}
+.cache-section-label {
+  color: var(--muted); font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: 0.4rem;
+}
+.cache-gauge-track {
+  background: var(--border); border-radius: 9999px;
+  height: 10px; width: 100%; overflow: hidden; margin-bottom: 0.3rem;
+}
+.cache-gauge-fill {
+  height: 100%; border-radius: 9999px;
+  background: linear-gradient(90deg, #a78bfa, #7c3aed); min-width: 2px;
+}
+.cache-gauge-labels {
+  display: flex; justify-content: space-between;
+  font-size: 0.7rem; color: var(--muted); margin-bottom: 1rem;
+}
+.cache-gauge-pct { color: #a78bfa; font-weight: 600; }
+.cache-sparkline-label {
+  color: var(--muted); font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: 0.3rem;
+}
+.cache-sparkline { width: 100%; height: 50px; display: block; overflow: visible; }
 """
 
 
@@ -723,6 +912,10 @@ def generate_html(
     cache_fill_events = _load_policy_events("quantum_cache_fill_monthly")
     cache_fill_schedule = _load_schedule_policy("quantum_cache_fill_monthly")
 
+    # Cache fullness widget (FR-20260515-quantum-cache-widget)
+    cache_widget_data = _load_cache_widget_data()
+    cache_widget = _build_cache_widget(cache_widget_data)
+
     shors_policy_panel = _build_sync_panel(
         "shors_monthly_benchmark", "&#128302;", "Shor's Monthly Benchmark",
         shors_events, schedule_policy,
@@ -752,7 +945,10 @@ def generate_html(
   &nbsp;·&nbsp; Dashboard generated: <span class="ts">{_esc(generated_at)}</span>
 </div>
 
-{cache_fill_panel}
+<div class="cache-fill-row">
+<div class="cache-fill-panel">{cache_fill_panel}</div>
+<div class="cache-fill-sidebar">{cache_widget}</div>
+</div>
 
 {vqe_sync_panel}
 
