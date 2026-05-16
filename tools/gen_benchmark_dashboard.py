@@ -465,6 +465,7 @@ def _build_sync_panel(
     title: str,
     events: list[dict],
     schedule_policy: dict,
+    extra_html: str = "",
 ) -> str:
     """Build a biomarker-style collapsible sync-status panel for a policy."""
     latest = events[0] if events else None
@@ -526,6 +527,7 @@ def _build_sync_panel(
       </thead>
       <tbody>{rows_html}</tbody>
     </table>
+    {extra_html}
   </div>
 </div>"""
 
@@ -834,15 +836,10 @@ code { background: var(--surface); border: 1px solid var(--border);
 .sync-table td { padding: 0.6rem 1.2rem; border-bottom: 1px solid var(--border); }
 .sync-empty-row td { color: var(--muted); font-style: italic; text-align: center; }
 /* Cache fullness widget — FR-20260515-quantum-cache-widget */
-.qpu-trend-with-cache {
-  display: flex; gap: 1.5rem; align-items: flex-start; margin-bottom: 2rem;
-}
-.qpu-trend-main { flex: 1; min-width: 0; }
-.cache-widget-float { flex: 0 0 260px; }
 .cache-card {
   background: var(--surface); border: 1px solid var(--border);
   border-top: 3px solid #a78bfa; border-radius: 12px; padding: 1.2rem;
-  position: sticky; top: 1rem;
+  margin-top: 1rem;
 }
 .cache-card-header {
   display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;
@@ -923,6 +920,7 @@ def generate_html(
     cache_fill_panel = _build_sync_panel(
         "quantum_cache_fill_monthly", "&#128267;", "Quantum Entropy Cache Fill",
         cache_fill_events, cache_fill_schedule,
+        extra_html=cache_widget,
     )
     vqe_sync_panel = _build_sync_panel(
         "vqe_monthly_benchmark", "&#129514;", "VQE Molecular Simulation",
@@ -984,15 +982,8 @@ def generate_html(
 <h2 class="qpu-heading">🔬 QPU Runs — Real IBM Quantum Hardware</h2>
 {_build_qpu_table(qpu_runs)}
 
-<div class="qpu-trend-with-cache">
-<div class="qpu-trend-main">
 <h2 class="monthly-heading">📅 Monthly QPU Trend</h2>
 {_build_monthly_table(trend)}
-</div>
-<div class="cache-widget-float">
-{cache_widget}
-</div>
-</div>
 
 <h2 class="hw-heading">📊 Full Benchmark History (Shor's v2)</h2>
 {_build_bench_table(bench_runs)}
