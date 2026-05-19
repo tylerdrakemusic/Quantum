@@ -20,3 +20,6 @@ python-dotenv
 # Numerics
 numpy
 scipy
+
+# Quantum Walk Music (FR-20260518-quantum-walk-music)
+midiutil

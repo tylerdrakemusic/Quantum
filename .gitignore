@@ -9,6 +9,11 @@
 *.aiff
 *.m4a
 *.ogg
+*.mid
+*.midi
+
+# Quantum Walk Music output (FR-20260518-quantum-walk-music)
+output/
 
 # Video
 *.mp4
