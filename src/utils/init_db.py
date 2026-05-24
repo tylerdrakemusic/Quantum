@@ -122,6 +122,18 @@ def init_db() -> None:
 
     CREATE INDEX IF NOT EXISTS idx_policy_events_policy_time
         ON policy_events(policy_id, event_time);
+
+    -- Cache depletion guard health log (FR-20260524-quantum-cache-depletion-guard)
+    CREATE TABLE IF NOT EXISTS cache_health_log (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts              TEXT    NOT NULL,
+        bits_remaining  INTEGER NOT NULL,
+        capacity_bits   INTEGER NOT NULL,
+        pct_full        REAL    NOT NULL,
+        action_taken    TEXT    NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cache_health_log_ts ON cache_health_log(ts);
     """)
 
     conn.commit()

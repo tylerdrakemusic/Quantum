@@ -19,6 +19,15 @@
       "day_of_month": 15,
       "hour": 3,
       "minute": 0
+    },
+    "QuantumCacheDepletionGuard_Daily": {
+      "policy_id": "QuantumCacheDepletionGuard_Daily",
+      "task_name": "QuantumCacheDepletionGuard_Daily",
+      "schedule": "daily",
+      "time_utc": "06:00",
+      "command": "C:\\G\\python.exe tools\\cache_depletion_guard.py",
+      "depletion_threshold_pct": 0.25,
+      "description": "Daily cache depletion monitor. Triggers early QuantumCacheFill_Monthly if cache < 25% capacity."
     }
   },
   "qpu_caps_seconds": {

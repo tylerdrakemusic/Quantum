@@ -21,3 +21,15 @@ CREATE TABLE IF NOT EXISTS benchmarks (
 
 CREATE INDEX IF NOT EXISTS idx_benchmarks_algorithm ON benchmarks(algorithm);
 CREATE INDEX IF NOT EXISTS idx_benchmarks_backend ON benchmarks(backend);
+
+-- Cache depletion guard health log (FR-20260524-quantum-cache-depletion-guard)
+CREATE TABLE IF NOT EXISTS cache_health_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts              TEXT    NOT NULL,
+    bits_remaining  INTEGER NOT NULL,
+    capacity_bits   INTEGER NOT NULL,
+    pct_full        REAL    NOT NULL,
+    action_taken    TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cache_health_log_ts ON cache_health_log(ts);

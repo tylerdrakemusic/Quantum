@@ -50,9 +50,10 @@ sys.path.insert(0, str(_ROOT / "src" / "utils"))
 import execution_policy
 
 POLICY_ID = "quantum_cache_fill_monthly"
-_BACKUP_DIR = _ROOT / "qbackups"
-_LIVE_DIR   = _ROOT / "src" / "data" / "liveCache"
-_LIVE_CACHE = _LIVE_DIR / "ty_string_cache.txt"
+_BACKUP_DIR       = _ROOT / "qbackups"
+_LIVE_DIR         = _ROOT / "src" / "data" / "liveCache"
+_LIVE_CACHE       = _LIVE_DIR / "ty_string_cache.txt"
+_CAPACITY_BASELINE = _LIVE_DIR / "ty_string_cache_capacity.txt"
 
 # ---------------------------------------------------------------------------
 # Constants — tune these to control IBM quota usage
@@ -348,6 +349,11 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
             fh.write(line + "\n")
 
     shutil.copy2(backup_path, _LIVE_CACHE)
+
+    # Write fill-completion capacity baseline (byte-count) for depletion guard
+    capacity_bytes = _LIVE_CACHE.stat().st_size
+    _CAPACITY_BASELINE.write_text(f"{capacity_bytes}\n", encoding="utf-8")
+    _logger.info("Capacity baseline: %s  (%d bytes)", _CAPACITY_BASELINE, capacity_bytes)
 
     _logger.info("Backup written : %s  (%d bytes)", backup_path, backup_path.stat().st_size)
     _logger.info("Live cache     : %s", _LIVE_CACHE)
