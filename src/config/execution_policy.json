@@ -41,6 +41,8 @@
   "qpu_caps_seconds": {
     "quantum_cache_fill_monthly": 180,
     "shors_monthly_benchmark": 300,
-    "vqe_monthly_benchmark": 600
+    "vqe_monthly_benchmark": 600,
+    "QuantumCacheDepletionGuard_Daily": 30,
+    "PolicyComplianceAudit_Daily": 30
   }
 }

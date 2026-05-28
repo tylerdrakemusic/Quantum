@@ -2,7 +2,8 @@
 Tests for tools/audit_policy.py — FR-20260527-execution-policy-auditor.
 
 All tests use in-memory fixture dicts; no real files or DB are touched.
-get_connection() is mocked to prevent writes during testing.
+DB writes are not exercised here — persist_run() is only called from the
+CLI entry point, which these unit tests do not invoke.
 """
 from __future__ import annotations
 
@@ -205,4 +206,4 @@ def test_run_all_checks_overall_warn_when_cap_missing(tmp_path: Path) -> None:
     tools_dir = Path(audit_policy.__file__).parent
 
     findings, overall = audit_policy.run_all_checks(policy, policy_file, tools_dir=tools_dir)
-    assert overall in ("WARN", "FAIL"), f"Expected WARN or FAIL, got {overall}"
+    assert overall == "WARN", f"Expected WARN, got {overall}"
