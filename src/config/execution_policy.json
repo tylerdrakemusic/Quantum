@@ -28,11 +28,21 @@
       "command": "C:\\G\\python.exe tools\\cache_depletion_guard.py",
       "depletion_threshold_pct": 0.25,
       "description": "Daily cache depletion monitor. Triggers early QuantumCacheFill_Monthly if cache < 25% capacity."
+    },
+    "PolicyComplianceAudit_Daily": {
+      "policy_id": "PolicyComplianceAudit_Daily",
+      "task_name": "PolicyComplianceAudit_Daily",
+      "schedule": "daily",
+      "time_utc": "07:00",
+      "command": "C:\\G\\python.exe tools\\audit_policy.py",
+      "description": "Daily compliance audit of execution_policy.json: schema, linkage, QPU cap coverage, and backup drift checks."
     }
   },
   "qpu_caps_seconds": {
     "quantum_cache_fill_monthly": 180,
     "shors_monthly_benchmark": 300,
-    "vqe_monthly_benchmark": 600
+    "vqe_monthly_benchmark": 600,
+    "QuantumCacheDepletionGuard_Daily": 30,
+    "PolicyComplianceAudit_Daily": 30
   }
 }
