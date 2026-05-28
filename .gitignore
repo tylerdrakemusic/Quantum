@@ -94,32 +94,9 @@ src/data/*.db-shm
 src/data/backups/
 *.tmp
 
-# FR-20260423-sibling-gitignore-parity
-*.pyd
-.playwright-mcp/
-src/data/*.db
-src/data/*.db-journal
-src/data/*.db-wal
-src/data/*.db-shm
-src/data/backups/
-*.tmp
-
-# FR-20260423-sibling-gitignore-parity
-*.pyd
-.playwright-mcp/
-src/data/*.db
-src/data/*.db-journal
-src/data/*.db-wal
-src/data/*.db-shm
-src/data/backups/
-*.tmp
-
-# FR-20260423-sibling-gitignore-parity
-*.pyd
-.playwright-mcp/
-src/data/*.db
-src/data/*.db-journal
-src/data/*.db-wal
-src/data/*.db-shm
-src/data/backups/
-*.tmp
+# Proof / QA screenshots (ephemeral QA artifacts — not committed to git)
+proof/**/*.png
+proof/**/*.jpg
+proof/**/*.jpeg
+proof/**/*.webp
+proof/**/*.gif
