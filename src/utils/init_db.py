@@ -134,6 +134,17 @@ def init_db() -> None:
     );
 
     CREATE INDEX IF NOT EXISTS idx_cache_health_log_ts ON cache_health_log(ts);
+
+    -- Compliance audit runs (FR-20260527-execution-policy-auditor)
+    CREATE TABLE IF NOT EXISTS policy_audit_runs (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_ts           TEXT    NOT NULL,
+        status           TEXT    NOT NULL CHECK(status IN ('PASS','WARN','FAIL')),
+        findings         TEXT    NOT NULL DEFAULT '[]',
+        policy_file_hash TEXT    NOT NULL DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_policy_audit_runs_ts ON policy_audit_runs(run_ts);
     """)
 
     conn.commit()
