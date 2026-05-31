@@ -1257,7 +1257,11 @@ def serve(port: int = 8210) -> None:
     GET  /orion/portrait/regen?mode=<m> — delete portrait cache, regen portrait + dashboard
     """
     from http.server import BaseHTTPRequestHandler, HTTPServer
+    from socketserver import ThreadingMixIn
     from urllib.parse import urlparse, parse_qs
+
+    class _ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+        daemon_threads = True
 
     _html_store: dict[str, str] = {}
 
@@ -1390,7 +1394,7 @@ def serve(port: int = 8210) -> None:
                 self.send_response(404)
                 self.end_headers()
 
-    httpd = HTTPServer(("localhost", port), Handler)
+    httpd = _ThreadedHTTPServer(("localhost", port), Handler)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
