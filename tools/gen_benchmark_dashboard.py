@@ -1263,7 +1263,12 @@ def serve(port: int = 8210) -> None:
 
     print(f"[orion-serve] Generating initial dashboard…")
     _html_store["html"] = _regen_dashboard()
-    print(f"[orion-serve] Listening on http://localhost:{port}/")
+    url = f"http://localhost:{port}/"
+    print(f"[orion-serve] Listening on {url}")
+    try:
+        webbrowser.get("brave").open(url)
+    except Exception:
+        webbrowser.open(url)
 
     def _load_orion_config_db():
         _key = "_orion_config_db_srv"
@@ -1394,23 +1399,22 @@ def serve(port: int = 8210) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate ⟨ψ⟩Quantum benchmark dashboard.")
-    parser.add_argument("--no-open", action="store_true", help="Generate only; do not open browser.")
-    parser.add_argument("--serve", action="store_true", help="Serve dashboard with Orion regen endpoints (port 8210).")
-    parser.add_argument("--port", type=int, default=8210, help="Port for --serve mode (default: 8210).")
+    parser.add_argument("--no-open", action="store_true", help="Do not open browser after generating (static mode only).")
+    parser.add_argument("--static", action="store_true", help="Generate static HTML only; do not start server.")
+    parser.add_argument("--port", type=int, default=8210, help="Port for serve mode (default: 8210).")
     args = parser.parse_args()
 
-    if args.serve:
-        serve(port=args.port)
+    if args.static:
+        html_content = _regen_dashboard()
+        print(f"Dashboard written: {OUT_PATH}")
+        if not args.no_open:
+            try:
+                webbrowser.get("brave").open(OUT_PATH.as_uri())
+            except Exception:
+                webbrowser.open(OUT_PATH.as_uri())
         return
 
-    html_content = _regen_dashboard()
-    print(f"Dashboard written: {OUT_PATH}")
-
-    if not args.no_open:
-        try:
-            webbrowser.get("brave").open(OUT_PATH.as_uri())
-        except Exception:
-            webbrowser.open(OUT_PATH.as_uri())
+    serve(port=args.port)
 
 
 if __name__ == "__main__":
