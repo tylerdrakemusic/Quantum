@@ -38,6 +38,31 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = _ROOT / "reports" / "benchmark_dashboard.html"
 # Add src/utils directly so `import init_db` works
+
+# ---------------------------------------------------------------------------
+# Orion portrait lazy-loader
+# ---------------------------------------------------------------------------
+
+def _get_orion_tag(mode: str | None = None) -> str:
+    """Return Orion's portrait <img> tag, or empty string on any error."""
+    try:
+        import importlib.util as _ilu
+        _key = "_orion_portrait"
+        if _key not in sys.modules:
+            _spec = _ilu.spec_from_file_location(
+                _key,
+                Path(__file__).resolve().parent.parent / "src" / "utils" / "orion_portrait.py",
+            )
+            if _spec and _spec.loader:
+                _mod = _ilu.module_from_spec(_spec)
+                sys.modules[_key] = _mod
+                _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+        _np = sys.modules.get(_key)
+        if _np is not None:
+            return _np.get_portrait_img_tag(max_width=120, mode=mode)
+    except Exception as exc:
+        print(f"[orion_portrait] Skipped: {exc}", file=sys.stderr)
+    return ""
 sys.path.insert(0, str(_ROOT / "src" / "utils"))
 
 # Register Brave on Windows
@@ -883,6 +908,59 @@ code { background: var(--surface); border: 1px solid var(--border);
 """
 
 
+# Orion portrait + edit modal CSS (injected into _CSS block)
+_ORION_CSS = """
+/* ── Orion portrait block (FR-20260530-quantum-orion-persona) ──────────── */
+.orion-header-block {
+  display: flex; align-items: flex-start; gap: 1.5rem; margin-bottom: 1.5rem;
+  padding: 1rem 1.2rem; background: var(--surface);
+  border: 1px solid var(--border); border-top: 3px solid #6320EE;
+  border-radius: 12px;
+}
+.orion-portrait-col { flex: 0 0 auto; }
+.orion-info-col { flex: 1; min-width: 0; }
+.orion-name { font-size: 1.1rem; font-weight: 700; color: #a78bfa; margin-bottom: 0.2rem; }
+.orion-subtitle { color: var(--muted); font-size: 0.82rem; margin-bottom: 0.6rem; }
+.orion-edit-btn {
+  background: rgba(99,32,238,0.18); border: 1px solid #6320EE;
+  color: #a78bfa; padding: 0.35rem 0.9rem; border-radius: 8px;
+  font-size: 0.8rem; cursor: pointer; font-family: inherit;
+  transition: background 0.15s;
+}
+.orion-edit-btn:hover { background: rgba(99,32,238,0.32); }
+/* Edit modal */
+#orion-edit-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75); z-index: 9999;
+  align-items: center; justify-content: center;
+}
+.orion-modal-box {
+  background: #161b22; border: 1px solid #6320EE;
+  border-radius: 16px; padding: 1.8rem; width: min(600px, 92vw);
+  max-height: 88vh; overflow-y: auto;
+}
+.orion-modal-title { font-size: 1.05rem; font-weight: 700; color: #a78bfa; margin-bottom: 1rem; }
+.orion-modal-label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase;
+  letter-spacing: 0.05em; margin: 0.8rem 0 0.25rem; }
+.orion-modal-select, .orion-modal-textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: 8px; padding: 0.5rem 0.7rem;
+  font-family: monospace; font-size: 0.82rem;
+}
+.orion-modal-textarea { height: 120px; resize: vertical; }
+.orion-modal-note { color: var(--muted); font-size: 0.75rem; font-style: italic; margin-top: 0.8rem; }
+.orion-modal-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; }
+.orion-modal-save-btn {
+  background: #6320EE; color: #fff; border: none; border-radius: 8px;
+  padding: 0.4rem 1.1rem; cursor: pointer; font-size: 0.85rem;
+}
+.orion-modal-cancel-btn {
+  background: var(--surface); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.4rem 1.1rem; cursor: pointer; font-size: 0.85rem;
+}
+"""
+
+
 def generate_html(
     qpu_runs: list[dict],
     bench_runs: list[dict],
@@ -929,15 +1007,57 @@ def generate_html(
         vqe_events, vqe_schedule,
     )
 
+    orion_tag = _get_orion_tag()
+    orion_modes_json = html.escape(
+        '["idle","active","result_ready"]', quote=True
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>⟨ψ⟩Quantum — Benchmark Dashboard</title>
-<style>{_CSS}</style>
+<style>{_CSS}{_ORION_CSS}</style>
 </head>
 <body>
+<!-- ── Orion AI persona header (FR-20260530-quantum-orion-persona) ─────── -->
+<div class="orion-header-block">
+  <div class="orion-portrait-col">{orion_tag}</div>
+  <div class="orion-info-col">
+    <div class="orion-name">Orion</div>
+    <div class="orion-subtitle">Quantum AI · Benchmark Dashboard</div>
+    <button class="orion-edit-btn"
+      onclick="document.getElementById('orion-edit-modal').style.display='flex'">
+      ✏ Edit Orion's Prompt
+    </button>
+  </div>
+</div>
+<!-- ── Orion edit modal ────────────────────────────────────────────────── -->
+<div id="orion-edit-modal">
+  <div class="orion-modal-box">
+    <div class="orion-modal-title">✏ Edit Orion's Portrait Prompt</div>
+    <div class="orion-modal-label">Mode</div>
+    <select id="orion-mode-select" class="orion-modal-select" onchange="_orionLoadPrompt(this.value)">
+      <option value="idle">Idle — no successful run in last 7 days</option>
+      <option value="active">Active — last successful run 1–7 days ago</option>
+      <option value="result_ready">Result Ready — last successful run within 24 h</option>
+    </select>
+    <div class="orion-modal-label">Positive Prompt</div>
+    <textarea id="orion-prompt-text" class="orion-modal-textarea"
+      placeholder="Describe Orion's appearance and setting for this mode..."></textarea>
+    <div class="orion-modal-note">
+      Changes are saved to localStorage. Run
+      <code>python tools/seed_orion_config.py</code> then
+      <code>python tools/gen_benchmark_dashboard.py</code> to regenerate the portrait.
+    </div>
+    <div class="orion-modal-actions">
+      <button class="orion-modal-cancel-btn"
+        onclick="document.getElementById('orion-edit-modal').style.display='none'">Cancel</button>
+      <button class="orion-modal-save-btn" onclick="_orionSavePrompt()">Save to localStorage</button>
+    </div>
+  </div>
+</div>
 <h1><span class="sigil">⟨ψ⟩</span>Quantum Benchmark Dashboard</h1>
 <div class="subtitle">Shor's Algorithm — IBM Quantum QPU + Simulator Runs · VQE Molecular Simulation</div>
 <div class="last-run">
@@ -996,6 +1116,31 @@ def generate_html(
 <script>
 // Auto-refresh every 60 seconds when the page is open (for live monitoring)
 setTimeout(() => location.reload(), 60000);
+
+// ── Orion edit modal helpers (FR-20260530-quantum-orion-persona) ──────────
+const _ORION_MODES = ['idle', 'active', 'result_ready'];
+function _orionLoadPrompt(mode) {{
+  const stored = localStorage.getItem('orion_prompt_' + mode);
+  document.getElementById('orion-prompt-text').value = stored || '';
+}}
+function _orionSavePrompt() {{
+  const mode = document.getElementById('orion-mode-select').value;
+  const text = document.getElementById('orion-prompt-text').value.trim();
+  if (!text) {{ alert('Prompt cannot be empty.'); return; }}
+  localStorage.setItem('orion_prompt_' + mode, text);
+  document.getElementById('orion-edit-modal').style.display = 'none';
+  alert('Saved! Run seed_orion_config.py + gen_benchmark_dashboard.py to apply.');
+}}
+// Load current mode's prompt when modal opens
+document.getElementById('orion-edit-modal').addEventListener('click', function(e) {{
+  if (e.target === this) this.style.display = 'none';
+}});
+_ORION_MODES.forEach(m => {{
+  const stored = localStorage.getItem('orion_prompt_' + m);
+  if (stored) console.log('[orion] Stored prompt for mode=' + m + ': ' + stored.slice(0,60) + '...');
+}});
+// Initialise textarea with current mode selection
+_orionLoadPrompt('idle');
 </script>
 </body>
 </html>"""
