@@ -13,7 +13,9 @@
 *.midi
 
 # Quantum Walk Music output (FR-20260518-quantum-walk-music)
-output/
+# BFX-20260531: narrowed from output/ to preserve output/images/ (Orion portrait cache)
+output/quantum_walk_*.html
+output/*.html
 
 # Video
 *.mp4
