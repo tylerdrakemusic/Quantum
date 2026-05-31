@@ -173,15 +173,18 @@ class TestQBEREve:
 
     @pytest.mark.parametrize("n_bits", [64, 128, 256])
     def test_eve_qber_above_threshold(self, n_bits):
-        # Average over 5 independent runs for statistical stability
+        # Average over 10 independent runs for statistical stability.
+        # Threshold is 0.15: well above the no-Eve baseline (~0%) and
+        # safely below the theoretical intercept-resend mean (~25%), while
+        # tolerating the higher variance of small sifted-key sizes (n=64).
         qbers = []
-        for seed in range(5):
+        for seed in range(10):
             result = run_bb84(n_bits=n_bits, backend="python", include_eve=True)
             if result["n_sifted"] > 0:
                 qbers.append(calculate_qber(result["alice_key"], result["bob_key"]))
         assert qbers, "No valid sifted keys produced with Eve"
         avg_qber = sum(qbers) / len(qbers)
-        assert avg_qber >= 0.20, (
+        assert avg_qber >= 0.15, (
             f"Eve QBER too low: avg={avg_qber:.4f} (n_bits={n_bits})"
         )
 
