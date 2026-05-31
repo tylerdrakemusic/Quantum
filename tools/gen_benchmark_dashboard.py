@@ -1345,11 +1345,10 @@ def serve(port: int = 8210) -> None:
                     portrait_mod = _load_orion_portrait_mod()
                     if portrait_mod is None:
                         raise RuntimeError("orion_portrait unavailable")
-                    # Delete cached portrait for this mode so it regenerates
-                    today = datetime.utcnow().strftime("%Y%m%d")
-                    cache_path = _ROOT / "output" / "images" / f"orion_portrait_{mode}_{today}.png"
-                    if cache_path.exists():
-                        cache_path.unlink()
+                    # Delete ALL cached portraits for this mode (glob avoids date-format mismatch)
+                    cache_dir = _ROOT / "output" / "images"
+                    for cached in cache_dir.glob(f"orion_portrait_{mode}_*.png"):
+                        cached.unlink(missing_ok=True)
                     portrait_mod.get_daily_portrait(mode=mode)
                     _html_store["html"] = _regen_dashboard()
                     self._send_json(200, {"ok": True, "mode": mode})
