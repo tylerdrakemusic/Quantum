@@ -192,7 +192,7 @@ def _run_bb84_python(n_bits: int, include_eve: bool, rng: np.random.Generator) -
 
 def _run_bb84_qiskit(n_bits: int, include_eve: bool, rng: np.random.Generator) -> dict:
     """Qiskit Aer BB84 simulation using QuantumCircuit with H/X gates."""
-    from qiskit import QuantumCircuit, transpile  # type: ignore
+    from qiskit import ClassicalRegister, QuantumCircuit, transpile  # type: ignore
     from qiskit_aer import AerSimulator  # type: ignore
 
     simulator = AerSimulator()
@@ -225,13 +225,11 @@ def _run_bb84_qiskit(n_bits: int, include_eve: bool, rng: np.random.Generator) -
 
     if include_eve:
         eve_bases = ["Z" if b == 0 else "X" for b in rng.integers(0, 2, size=n_bits)]
-        eve_bits_raw = [int(x) for x in rng.integers(0, 2, size=n_bits)]  # unused but kept for symmetry
-
         # Phase 1: Alice prepares, Eve measures in her chosen basis
         phase1: List[QuantumCircuit] = []
         for i in range(n_bits):
             qc = _alice_circuit(alice_bits[i], alice_bases[i])
-            qc.add_register(__import__("qiskit").ClassicalRegister(1))
+            qc.add_register(ClassicalRegister(1))
             if eve_bases[i] == "X":
                 qc.h(0)
             qc.measure(0, 0)
@@ -258,7 +256,7 @@ def _run_bb84_qiskit(n_bits: int, include_eve: bool, rng: np.random.Generator) -
         circuits: List[QuantumCircuit] = []
         for i in range(n_bits):
             qc = _alice_circuit(alice_bits[i], alice_bases[i])
-            qc.add_register(__import__("qiskit").ClassicalRegister(1))
+            qc.add_register(ClassicalRegister(1))
             if bob_bases[i] == "X":
                 qc.h(0)
             qc.measure(0, 0)
@@ -329,6 +327,10 @@ def calculate_qber(alice_key: List[int], bob_key: List[int]) -> float:
     """
     if not alice_key or not bob_key:
         return 0.0
-    n = min(len(alice_key), len(bob_key))
-    errors = sum(a != b for a, b in zip(alice_key[:n], bob_key[:n]))
-    return errors / n
+    if len(alice_key) != len(bob_key):
+        raise ValueError(
+            f"Key length mismatch: alice_key has {len(alice_key)} bits, "
+            f"bob_key has {len(bob_key)} bits. Keys must be the same length."
+        )
+    errors = sum(a != b for a, b in zip(alice_key, bob_key))
+    return errors / len(alice_key)
