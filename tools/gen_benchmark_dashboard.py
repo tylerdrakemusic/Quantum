@@ -38,6 +38,66 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = _ROOT / "reports" / "benchmark_dashboard.html"
 # Add src/utils directly so `import init_db` works
+
+# ---------------------------------------------------------------------------
+# Orion portrait lazy-loader
+# ---------------------------------------------------------------------------
+
+def _get_orion_tag(mode: str | None = None) -> str:
+    """Return Orion's portrait <img> tag, or empty string on any error."""
+    try:
+        import importlib.util as _ilu
+        _key = "_orion_portrait"
+        if _key not in sys.modules:
+            _spec = _ilu.spec_from_file_location(
+                _key,
+                Path(__file__).resolve().parent.parent / "src" / "utils" / "orion_portrait.py",
+            )
+            if _spec and _spec.loader:
+                _mod = _ilu.module_from_spec(_spec)
+                sys.modules[_key] = _mod
+                _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+        _np = sys.modules.get(_key)
+        if _np is not None:
+            return _np.get_portrait_img_tag(max_width=120, mode=mode)
+    except Exception as exc:
+        print(f"[orion_portrait] Skipped: {exc}", file=sys.stderr)
+    return ""
+
+
+def _load_orion_prompts_json() -> str:
+    """Load all 3 mode prompts from orion_config.db at generation time.
+
+    Returns a JSON string for embedding as ``const _ORION_PROMPTS`` in the
+    generated HTML so the modal textarea is pre-populated even in file:// mode.
+    """
+    import importlib.util as _ilu
+    try:
+        _key = "_orion_config_db_gen"
+        if _key not in sys.modules:
+            _spec = _ilu.spec_from_file_location(
+                _key,
+                Path(__file__).resolve().parent.parent / "src" / "utils" / "orion_config_db.py",
+            )
+            if _spec and _spec.loader:
+                _mod = _ilu.module_from_spec(_spec)
+                sys.modules[_key] = _mod
+                _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+        _db = sys.modules.get(_key)
+        if _db is None:
+            return "{}"
+        prompts: dict[str, str] = {}
+        for _mode in ("idle", "active", "result_ready"):
+            try:
+                pos, _ = _db.get_active_prompt(_mode)
+                prompts[_mode] = pos
+            except Exception:
+                prompts[_mode] = ""
+        return json.dumps(prompts, ensure_ascii=False)
+    except Exception:
+        return "{}"
+
+
 sys.path.insert(0, str(_ROOT / "src" / "utils"))
 
 # Register Brave on Windows
@@ -883,6 +943,61 @@ code { background: var(--surface); border: 1px solid var(--border);
 """
 
 
+# Orion portrait + edit modal CSS (injected into _CSS block)
+_ORION_CSS = """
+/* ── Orion portrait block (FR-20260530-quantum-orion-persona) ──────────── */
+.orion-header-block {
+  display: flex; align-items: flex-start; gap: 1.5rem; margin-bottom: 1.5rem;
+  padding: 1rem 1.2rem; background: var(--surface);
+  border: 1px solid var(--border); border-top: 3px solid #6320EE;
+  border-radius: 12px;
+}
+.orion-portrait-col { flex: 0 0 auto; position: relative; }
+.orion-info-col { flex: 1; min-width: 0; }
+.orion-name { font-size: 1.1rem; font-weight: 700; color: #a78bfa; margin-bottom: 0.2rem; }
+.orion-subtitle { color: var(--muted); font-size: 0.82rem; margin-bottom: 0.2rem; }
+.orion-pencil-btn {
+  position: absolute; top: 4px; right: 4px;
+  background: rgba(0,0,0,.65); border: none; border-radius: 50%;
+  width: 24px; height: 24px; font-size: 12px; color: #a78bfa;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  opacity: 0.35; transition: opacity .15s; padding: 0; line-height: 1;
+}
+.orion-pencil-btn:hover { opacity: 0.95 !important; }
+/* Edit modal */
+#orion-edit-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75); z-index: 9999;
+  align-items: center; justify-content: center;
+}
+.orion-modal-box {
+  background: #161b22; border: 1px solid #6320EE;
+  border-radius: 16px; padding: 1.8rem; width: min(600px, 92vw);
+  max-height: 88vh; overflow-y: auto;
+}
+.orion-modal-title { font-size: 1.05rem; font-weight: 700; color: #a78bfa; margin-bottom: 1rem; }
+.orion-modal-label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase;
+  letter-spacing: 0.05em; margin: 0.8rem 0 0.25rem; }
+.orion-modal-select, .orion-modal-textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: 8px; padding: 0.5rem 0.7rem;
+  font-family: monospace; font-size: 0.82rem;
+}
+.orion-modal-textarea { height: 120px; resize: vertical; }
+.orion-modal-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; flex-wrap: wrap; }
+.orion-modal-save-btn {
+  background: #6320EE; color: #fff; border: none; border-radius: 8px;
+  padding: 0.4rem 1.1rem; cursor: pointer; font-size: 0.85rem;
+}
+.orion-modal-save-btn:disabled { opacity: 0.5; cursor: wait; }
+.orion-modal-cancel-btn {
+  background: var(--surface); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.4rem 1.1rem; cursor: pointer; font-size: 0.85rem;
+}
+.orion-modal-status { font-size: 0.8rem; margin-top: 0.5rem; color: #94a3b8; min-height: 1.2em; }
+"""
+
+
 def generate_html(
     qpu_runs: list[dict],
     bench_runs: list[dict],
@@ -929,15 +1044,50 @@ def generate_html(
         vqe_events, vqe_schedule,
     )
 
+    orion_tag = _get_orion_tag()
+    orion_prompts_json = _load_orion_prompts_json()
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>⟨ψ⟩Quantum — Benchmark Dashboard</title>
-<style>{_CSS}</style>
+<style>{_CSS}{_ORION_CSS}</style>
 </head>
 <body>
+<!-- ── Orion AI persona header (FR-20260530-quantum-orion-persona) ─────── -->
+<div class="orion-header-block">
+  <div class="orion-portrait-col">
+    {orion_tag}
+    <button class="orion-pencil-btn" onclick="_orionOpenModal()" title="Edit Orion's portrait prompt"
+      onmouseenter="this.style.opacity='0.9'" onmouseleave="this.style.opacity='0.35'">&#x270F;</button>
+  </div>
+  <div class="orion-info-col">
+    <div class="orion-name">Orion</div>
+    <div class="orion-subtitle">Quantum AI · Benchmark Dashboard</div>
+  </div>
+</div>
+<!-- ── Orion edit modal ────────────────────────────────────────────────── -->
+<div id="orion-edit-modal" onclick="_orionClickOutside(event)">
+  <div class="orion-modal-box">
+    <div class="orion-modal-title">&#x270F; Edit Orion&#8217;s Portrait Prompt</div>
+    <div class="orion-modal-label">Mode</div>
+    <select id="orion-mode-select" class="orion-modal-select" onchange="_orionLoadPrompt(this.value)">
+      <option value="idle">Idle &#8212; no successful run in last 7 days</option>
+      <option value="active">Active &#8212; last successful run 1&#8211;7 days ago</option>
+      <option value="result_ready">Result Ready &#8212; last successful run within 24 h</option>
+    </select>
+    <div class="orion-modal-label">Positive Prompt</div>
+    <textarea id="orion-prompt-text" class="orion-modal-textarea"
+      placeholder="Describe Orion's appearance and setting for this mode..."></textarea>
+    <div class="orion-modal-actions">
+      <button class="orion-modal-save-btn" id="orion-save-btn" onclick="_orionSave()">Save &amp; Regenerate</button>
+      <button class="orion-modal-cancel-btn" onclick="_orionCloseModal()">Cancel</button>
+    </div>
+    <div class="orion-modal-status" id="orion-modal-status"></div>
+  </div>
+</div>
 <h1><span class="sigil">⟨ψ⟩</span>Quantum Benchmark Dashboard</h1>
 <div class="subtitle">Shor's Algorithm — IBM Quantum QPU + Simulator Runs · VQE Molecular Simulation</div>
 <div class="last-run">
@@ -996,16 +1146,91 @@ def generate_html(
 <script>
 // Auto-refresh every 60 seconds when the page is open (for live monitoring)
 setTimeout(() => location.reload(), 60000);
+
+// ── Orion edit modal (FR-20260530-quantum-orion-persona) ─────────────────
+const _ORION_PROMPTS = {orion_prompts_json};
+let _orionApiAvail = null;
+async function _orionCheckApi() {{
+  if (_orionApiAvail !== null) return _orionApiAvail;
+  try {{
+    const r = await fetch('/orion/prompt?mode=idle', {{method: 'HEAD'}});
+    _orionApiAvail = r.ok || r.status === 405;
+  }} catch(_) {{ _orionApiAvail = false; }}
+  return _orionApiAvail;
+}}
+function _orionOpenModal() {{
+  document.getElementById('orion-edit-modal').style.display = 'flex';
+  document.getElementById('orion-modal-status').textContent = '';
+  _orionLoadPrompt(document.getElementById('orion-mode-select').value);
+}}
+function _orionCloseModal() {{
+  document.getElementById('orion-edit-modal').style.display = 'none';
+  document.getElementById('orion-modal-status').textContent = '';
+}}
+function _orionClickOutside(e) {{
+  if (e.target === document.getElementById('orion-edit-modal')) _orionCloseModal();
+}}
+async function _orionLoadPrompt(mode) {{
+  const status = document.getElementById('orion-modal-status');
+  const available = await _orionCheckApi();
+  if (available) {{
+    status.textContent = 'Loading\u2026';
+    fetch('/orion/prompt?mode=' + encodeURIComponent(mode))
+      .then(r => r.json())
+      .then(d => {{
+        document.getElementById('orion-prompt-text').value = d.positive_prompt || '';
+        status.textContent = '';
+      }})
+      .catch(err => {{
+        document.getElementById('orion-prompt-text').value = _ORION_PROMPTS[mode] || '';
+        status.textContent = '';
+      }});
+  }} else {{
+    document.getElementById('orion-prompt-text').value = _ORION_PROMPTS[mode] || '';
+    status.textContent = 'Serve mode required for live regen: python tools/gen_benchmark_dashboard.py --serve';
+  }}
+}}
+async function _orionSave() {{
+  const available = await _orionCheckApi();
+  if (!available) {{
+    document.getElementById('orion-modal-status').textContent =
+      'Run: python tools/gen_benchmark_dashboard.py --serve to enable regen from UI.';
+    return;
+  }}
+  const btn = document.getElementById('orion-save-btn');
+  const status = document.getElementById('orion-modal-status');
+  const mode = document.getElementById('orion-mode-select').value;
+  const prompt = document.getElementById('orion-prompt-text').value.trim();
+  if (!prompt) {{ status.textContent = 'Prompt cannot be empty.'; return; }}
+  btn.disabled = true; btn.textContent = 'Saving\u2026'; status.textContent = '';
+  try {{
+    const saveResp = await fetch('/orion/prompt', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{mode: mode, positive_prompt: prompt}})
+    }});
+    if (!saveResp.ok) {{ status.textContent = 'Save failed (' + saveResp.status + ').'; return; }}
+    btn.textContent = 'Regenerating\u2026';
+    const regenResp = await fetch('/orion/portrait/regen?mode=' + encodeURIComponent(mode));
+    if (regenResp.ok) {{
+      status.textContent = '\u2705 Portrait regenerated. Reloading\u2026';
+      setTimeout(() => {{ _orionCloseModal(); location.reload(); }}, 1200);
+    }} else {{
+      status.textContent = 'Regen failed (' + regenResp.status + '). Prompt was saved.';
+    }}
+  }} catch(e) {{
+    status.textContent = 'Error: ' + e.message;
+  }} finally {{
+    btn.disabled = false; btn.textContent = 'Save & Regenerate';
+  }}
+}}
 </script>
 </body>
 </html>"""
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate ⟨ψ⟩Quantum benchmark dashboard.")
-    parser.add_argument("--no-open", action="store_true", help="Generate only; do not open browser.")
-    args = parser.parse_args()
-
+def _regen_dashboard() -> str:
+    """(Re-)generate the dashboard HTML, write it to OUT_PATH, return the HTML string."""
     qpu_runs = _load_qpu_runs()
     bench_runs = _load_bench_runs()
     vqe_runs = _load_vqe_runs()
@@ -1013,25 +1238,186 @@ def main() -> None:
     shors_schedule = _load_schedule_policy("shors_monthly_benchmark")
     trend = _monthly_trend(qpu_runs)
     generated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     html_content = generate_html(
-        qpu_runs,
-        bench_runs,
-        trend,
-        generated_at,
-        shors_events,
-        shors_schedule,
-        vqe_runs,
+        qpu_runs, bench_runs, trend, generated_at, shors_events, shors_schedule, vqe_runs,
     )
     OUT_PATH.write_text(html_content, encoding="utf-8")
-    print(f"Dashboard written: {OUT_PATH}")
+    return html_content
 
-    if not args.no_open:
-        try:
-            webbrowser.get("brave").open(OUT_PATH.as_uri())
-        except Exception:
-            webbrowser.open(OUT_PATH.as_uri())
+
+def serve(port: int = 8210) -> None:
+    """Serve the ⟨ψ⟩Quantum benchmark dashboard with Orion portrait edit endpoints.
+
+    Endpoints
+    ---------
+    GET  /                            — serve latest dashboard HTML
+    GET  /orion/prompt?mode=<m>       — return JSON {"positive_prompt": "..."}
+    POST /orion/prompt                — body {"mode":"...","positive_prompt":"..."} — save
+    GET  /orion/portrait/regen?mode=<m> — delete portrait cache, regen portrait + dashboard
+    """
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from socketserver import ThreadingMixIn
+    from urllib.parse import urlparse, parse_qs
+
+    class _ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+        daemon_threads = True
+
+    _html_store: dict[str, str] = {}
+
+    print(f"[orion-serve] Generating initial dashboard…")
+    _html_store["html"] = _regen_dashboard()
+    url = f"http://localhost:{port}/"
+    print(f"[orion-serve] Listening on {url}")
+    try:
+        webbrowser.get("brave").open(url)
+    except Exception:
+        webbrowser.open(url)
+
+    def _load_orion_config_db():
+        _key = "_orion_config_db_srv"
+        if _key not in sys.modules:
+            import importlib.util as _ilu
+            _spec = _ilu.spec_from_file_location(
+                _key,
+                _ROOT / "src" / "utils" / "orion_config_db.py",
+            )
+            if _spec and _spec.loader:
+                _mod = _ilu.module_from_spec(_spec)
+                sys.modules[_key] = _mod
+                _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+        return sys.modules.get(_key)
+
+    def _load_orion_portrait_mod():
+        _key = "_orion_portrait_srv"
+        if _key not in sys.modules:
+            import importlib.util as _ilu
+            _spec = _ilu.spec_from_file_location(
+                _key,
+                _ROOT / "src" / "utils" / "orion_portrait.py",
+            )
+            if _spec and _spec.loader:
+                _mod = _ilu.module_from_spec(_spec)
+                sys.modules[_key] = _mod
+                _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+        return sys.modules.get(_key)
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):  # suppress access log
+            pass
+
+        def _send_json(self, code: int, payload: dict) -> None:
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            parsed = urlparse(self.path)
+            path = parsed.path
+            qs = parse_qs(parsed.query)
+
+            if path in ("/", "/index.html"):
+                body = _html_store.get("html", "<h1>Generating…</h1>").encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+                self.end_headers()
+                self.wfile.write(body)
+
+            elif path == "/orion/prompt":
+                mode = (qs.get("mode") or ["idle"])[0]
+                try:
+                    db = _load_orion_config_db()
+                    if db is None:
+                        raise RuntimeError("orion_config_db unavailable")
+                    pos, neg = db.get_active_prompt(mode)
+                    self._send_json(200, {"mode": mode, "positive_prompt": pos, "negative_prompt": neg})
+                except Exception as exc:
+                    self._send_json(500, {"error": str(exc)})
+
+            elif path == "/orion/portrait/regen":
+                mode = (qs.get("mode") or ["idle"])[0]
+                try:
+                    portrait_mod = _load_orion_portrait_mod()
+                    if portrait_mod is None:
+                        raise RuntimeError("orion_portrait unavailable")
+                    # Delete ALL cached portraits for this mode (glob avoids date-format mismatch)
+                    cache_dir = _ROOT / "output" / "images"
+                    for cached in cache_dir.glob(f"orion_portrait_{mode}_*.png"):
+                        cached.unlink(missing_ok=True)
+                    portrait_mod.get_daily_portrait(mode=mode)
+                    _html_store["html"] = _regen_dashboard()
+                    self._send_json(200, {"ok": True, "mode": mode})
+                except Exception as exc:
+                    self._send_json(500, {"error": str(exc)})
+
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_HEAD(self):
+            parsed = urlparse(self.path)
+            path = parsed.path
+            if path == "/orion/prompt":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_POST(self):
+            parsed = urlparse(self.path)
+            path = parsed.path
+            if path == "/orion/prompt":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length)
+                try:
+                    data = json.loads(body.decode("utf-8"))
+                    mode = data.get("mode", "idle").strip()
+                    pos = data.get("positive_prompt", "").strip()
+                    if not pos:
+                        raise ValueError("positive_prompt cannot be empty")
+                    db = _load_orion_config_db()
+                    if db is None:
+                        raise RuntimeError("orion_config_db unavailable")
+                    db.update_active_prompt(mode, pos)
+                    self._send_json(200, {"ok": True})
+                except Exception as exc:
+                    self._send_json(400, {"ok": False, "error": str(exc)})
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+    httpd = _ThreadedHTTPServer(("localhost", port), Handler)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[orion-serve] Stopped.")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate ⟨ψ⟩Quantum benchmark dashboard.")
+    parser.add_argument("--no-open", action="store_true", help="Do not open browser after generating (static mode only).")
+    parser.add_argument("--static", action="store_true", help="Generate static HTML only; do not start server.")
+    parser.add_argument("--port", type=int, default=8210, help="Port for serve mode (default: 8210).")
+    args = parser.parse_args()
+
+    if args.static:
+        html_content = _regen_dashboard()
+        print(f"Dashboard written: {OUT_PATH}")
+        if not args.no_open:
+            try:
+                webbrowser.get("brave").open(OUT_PATH.as_uri())
+            except Exception:
+                webbrowser.open(OUT_PATH.as_uri())
+        return
+
+    serve(port=args.port)
 
 
 if __name__ == "__main__":
