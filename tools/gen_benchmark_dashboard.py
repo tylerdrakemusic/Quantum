@@ -98,6 +98,33 @@ def _load_orion_prompts_json() -> str:
         return "{}"
 
 
+def _load_orion_current_mode() -> str:
+    """Detect Orion's current run-state mode at dashboard generation time.
+
+    Returns the mode string ('idle', 'active', or 'result_ready') for
+    embedding as ``const _ORION_CURRENT_MODE`` so the modal can auto-select
+    the correct mode without a server round-trip when the API is unavailable.
+    """
+    import importlib.util as _ilu
+    try:
+        _key = "_orion_portrait_gen"
+        if _key not in sys.modules:
+            _spec = _ilu.spec_from_file_location(
+                _key,
+                Path(__file__).resolve().parent.parent / "src" / "utils" / "orion_portrait.py",
+            )
+            if _spec and _spec.loader:
+                _mod = _ilu.module_from_spec(_spec)
+                sys.modules[_key] = _mod
+                _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+        _portrait = sys.modules.get(_key)
+        if _portrait is not None and hasattr(_portrait, "_detect_mode"):
+            return _portrait._detect_mode()
+    except Exception:
+        pass
+    return "idle"
+
+
 sys.path.insert(0, str(_ROOT / "src" / "utils"))
 
 # Register Brave on Windows
@@ -1046,6 +1073,7 @@ def generate_html(
 
     orion_tag = _get_orion_tag()
     orion_prompts_json = _load_orion_prompts_json()
+    orion_current_mode = _load_orion_current_mode()
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1149,6 +1177,7 @@ setTimeout(() => location.reload(), 60000);
 
 // ── Orion edit modal (FR-20260530-quantum-orion-persona) ─────────────────
 const _ORION_PROMPTS = {orion_prompts_json};
+const _ORION_CURRENT_MODE = '{orion_current_mode}';
 let _orionApiAvail = null;
 async function _orionCheckApi() {{
   if (_orionApiAvail !== null) return _orionApiAvail;
@@ -1158,10 +1187,20 @@ async function _orionCheckApi() {{
   }} catch(_) {{ _orionApiAvail = false; }}
   return _orionApiAvail;
 }}
-function _orionOpenModal() {{
+async function _orionOpenModal() {{
   document.getElementById('orion-edit-modal').style.display = 'flex';
   document.getElementById('orion-modal-status').textContent = '';
-  _orionLoadPrompt(document.getElementById('orion-mode-select').value);
+  // Auto-detect current mode: live from server if available, else use
+  // the mode embedded at generation time.
+  let mode = _ORION_CURRENT_MODE;
+  if (await _orionCheckApi()) {{
+    try {{
+      const r = await fetch('/orion/mode');
+      if (r.ok) {{ const d = await r.json(); mode = d.mode || mode; }}
+    }} catch(_) {{}}
+  }}
+  document.getElementById('orion-mode-select').value = mode;
+  _orionLoadPrompt(mode);
 }}
 function _orionCloseModal() {{
   document.getElementById('orion-edit-modal').style.display = 'none';
@@ -1327,6 +1366,16 @@ def serve(port: int = 8210) -> None:
                 self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
                 self.end_headers()
                 self.wfile.write(body)
+
+            elif path == "/orion/mode":
+                try:
+                    portrait_mod = _load_orion_portrait_mod()
+                    if portrait_mod is None:
+                        raise RuntimeError("orion_portrait unavailable")
+                    detected = portrait_mod._detect_mode()
+                    self._send_json(200, {"mode": detected})
+                except Exception as exc:
+                    self._send_json(200, {"mode": "idle", "error": str(exc)})
 
             elif path == "/orion/prompt":
                 mode = (qs.get("mode") or ["idle"])[0]
