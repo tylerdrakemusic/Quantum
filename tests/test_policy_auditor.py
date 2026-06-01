@@ -207,3 +207,39 @@ def test_run_all_checks_overall_warn_when_cap_missing(tmp_path: Path) -> None:
 
     findings, overall = audit_policy.run_all_checks(policy, policy_file, tools_dir=tools_dir)
     assert overall == "WARN", f"Expected WARN, got {overall}"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FR-20260531-quantum-6-1-preflight: optional daily keys allowed
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_description_allowed_on_daily_entry() -> None:
+    """'description' is an optional key on daily entries — must NOT emit WARN."""
+    policy = _compliant_policy()
+    policy["schedules"]["PolicyComplianceAudit_Daily"]["description"] = (
+        "Daily compliance audit."
+    )
+    findings = audit_policy.check_schema(policy)
+    assert all(f["status"] != "WARN" for f in findings), (
+        f"Unexpected WARN for 'description': {findings}"
+    )
+
+
+def test_depletion_threshold_pct_allowed_on_daily_entry() -> None:
+    """'depletion_threshold_pct' is an optional key on daily entries — must NOT emit WARN."""
+    policy = _compliant_policy()
+    policy["schedules"]["PolicyComplianceAudit_Daily"]["depletion_threshold_pct"] = 0.25
+    findings = audit_policy.check_schema(policy)
+    assert all(f["status"] != "WARN" for f in findings), (
+        f"Unexpected WARN for 'depletion_threshold_pct': {findings}"
+    )
+
+
+def test_truly_unknown_key_on_daily_entry_warns() -> None:
+    """Keys not in _DAILY_REQUIRED or _DAILY_OPTIONAL must still emit WARN."""
+    policy = _compliant_policy()
+    policy["schedules"]["PolicyComplianceAudit_Daily"]["totally_unknown_key_xyz"] = "oops"
+    findings = audit_policy.check_schema(policy)
+    warn_findings = [f for f in findings if f["status"] == "WARN"]
+    assert warn_findings, f"Expected WARN for unknown key but got: {findings}"
+    assert any("totally_unknown_key_xyz" in f["details"] for f in warn_findings), findings

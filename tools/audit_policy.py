@@ -41,6 +41,7 @@ POLICY_ID = "PolicyComplianceAudit_Daily"
 
 _MONTHLY_REQUIRED = {"task_name", "day_of_month", "hour", "minute"}
 _DAILY_REQUIRED   = {"policy_id", "task_name", "schedule", "time_utc", "command"}
+_DAILY_OPTIONAL   = {"description", "depletion_threshold_pct"}
 
 # ── Finding helpers ─────────────────────────────────────────────────────────
 
@@ -69,9 +70,11 @@ def check_schema(policy: dict[str, Any]) -> list[dict[str, str]]:
         if "day_of_month" in entry:
             entry_type = "monthly"
             required = _MONTHLY_REQUIRED
+            optional: set[str] = set()
         elif "schedule" in entry:
             entry_type = "daily"
             required = _DAILY_REQUIRED
+            optional = _DAILY_OPTIONAL
         else:
             findings.append(_finding(
                 "Schema conformance", "FAIL",
@@ -86,7 +89,7 @@ def check_schema(policy: dict[str, Any]) -> list[dict[str, str]]:
                 f"{entry_id} ({entry_type}): missing required keys: {sorted(missing)}",
             ))
         else:
-            extra = keys - required
+            extra = keys - required - optional
             if extra:
                 findings.append(_finding(
                     "Schema conformance", "WARN",
