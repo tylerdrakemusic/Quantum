@@ -13,7 +13,10 @@ Run:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 # ---------------------------------------------------------------------------
 # Path bootstrap — works from main checkout and git worktree
@@ -27,11 +30,19 @@ PORTAL_SERVERS_JSON = _WORKSPACE_TOOLS / "portal_servers.json"
 LAUNCHER_SCRIPT = _WORKSPACE_TOOLS / "start_quantum_benchmark.ps1"
 DASHBOARD_JSON = _QUANTUM_WORKTREE / "dashboard.json"
 
+# Tests that reference ⊕Workspace files only run locally (CI clones Quantum
+# repo only; ⊕Workspace is unavailable on the runner).
+_requires_workspace = pytest.mark.skipif(
+    not _WORKSPACE_TOOLS.exists() or bool(os.environ.get("CI")),
+    reason="⊕Workspace files not available in CI environment",
+)
+
 
 # ---------------------------------------------------------------------------
 # AC1 — launcher script exists
 # ---------------------------------------------------------------------------
 
+@_requires_workspace
 def test_launcher_script_exists() -> None:
     assert LAUNCHER_SCRIPT.exists(), (
         f"Missing launcher script: {LAUNCHER_SCRIPT}\n"
@@ -43,6 +54,7 @@ def test_launcher_script_exists() -> None:
 # AC2 — portal_servers.json contains a port-8210 entry
 # ---------------------------------------------------------------------------
 
+@_requires_workspace
 def test_portal_servers_json_has_port_8210() -> None:
     assert PORTAL_SERVERS_JSON.exists(), f"Missing: {PORTAL_SERVERS_JSON}"
     data = json.loads(PORTAL_SERVERS_JSON.read_text(encoding="utf-8-sig"))
@@ -57,6 +69,7 @@ def test_portal_servers_json_has_port_8210() -> None:
 # AC3 — port-8210 entry is enabled and belongs to ⟨ψ⟩Quantum
 # ---------------------------------------------------------------------------
 
+@_requires_workspace
 def test_portal_servers_quantum_entry_valid() -> None:
     data = json.loads(PORTAL_SERVERS_JSON.read_text(encoding="utf-8-sig"))
     entry = next((s for s in data["servers"] if s.get("port") == 8210), None)
