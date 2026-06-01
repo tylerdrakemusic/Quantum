@@ -1187,14 +1187,14 @@ async function _orionLoadPrompt(mode) {{
       }});
   }} else {{
     document.getElementById('orion-prompt-text').value = _ORION_PROMPTS[mode] || '';
-    status.textContent = 'Serve mode required for live regen: python tools/gen_benchmark_dashboard.py --serve';
+    status.textContent = 'Serve mode required for live regen: python tools/gen_benchmark_dashboard.py --port 8210';
   }}
 }}
 async function _orionSave() {{
   const available = await _orionCheckApi();
   if (!available) {{
     document.getElementById('orion-modal-status').textContent =
-      'Run: python tools/gen_benchmark_dashboard.py --serve to enable regen from UI.';
+      'Run: python tools/gen_benchmark_dashboard.py --port 8210 to enable regen from UI.';
     return;
   }}
   const btn = document.getElementById('orion-save-btn');
