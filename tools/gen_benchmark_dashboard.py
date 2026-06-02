@@ -1285,7 +1285,7 @@ def _regen_dashboard() -> str:
     return html_content
 
 
-def serve(port: int = 8210) -> None:
+def serve(port: int = 8210, no_open: bool = False) -> None:
     """Serve the ⟨ψ⟩Quantum benchmark dashboard with Orion portrait edit endpoints.
 
     Endpoints
@@ -1308,10 +1308,12 @@ def serve(port: int = 8210) -> None:
     _html_store["html"] = _regen_dashboard()
     url = f"http://localhost:{port}/"
     print(f"[orion-serve] Listening on {url}")
-    try:
-        webbrowser.get("brave").open(url)
-    except Exception:
-        webbrowser.open(url)
+    
+    if not no_open:
+        try:
+            webbrowser.get("brave").open(url)
+        except Exception:
+            webbrowser.open(url)
 
     def _load_orion_config_db():
         _key = "_orion_config_db_srv"
@@ -1466,7 +1468,7 @@ def main() -> None:
                 webbrowser.open(OUT_PATH.as_uri())
         return
 
-    serve(port=args.port)
+    serve(port=args.port, no_open=args.no_open)
 
 
 if __name__ == "__main__":
