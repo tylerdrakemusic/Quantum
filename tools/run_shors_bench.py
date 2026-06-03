@@ -384,8 +384,9 @@ def run_benchmark(
     n_value: int = 15,
     dry_run: bool = False,
     max_qpu_seconds: int = MAX_QPU_SECONDS,
+    backend_choice: str = "ibm",
 ) -> dict:
-    """Run Shor's algorithm on IBM Quantum hardware for the given N.
+    """Run Shor's algorithm on IBM Quantum hardware or local Aer simulator for the given N.
 
     Returns a dict with all result fields.
     """
@@ -393,6 +394,7 @@ def run_benchmark(
     _log.info("  Shor's Monthly QPU Benchmark  (FR-20260428)")
     _log.info("  N = %d  |  n_count = %d  |  QPU cap = %ds", n_value, N_COUNT, max_qpu_seconds)
     _log.info("  Dry run: %s", dry_run)
+    _log.info("  Backend: %s", backend_choice)
     _log.info("=" * 60)
 
     # Build circuit
@@ -414,60 +416,91 @@ def run_benchmark(
             "notes": "dry-run; no job submitted",
         }
 
-    # ── Connect to IBM Quantum ──────────────────────────────────────────────
-    try:
-        from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2 as Sampler
-        from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
-    except ImportError:
-        raise ImportError("Required: pip install qiskit qiskit-ibm-runtime")
+    if backend_choice.lower() == "aer":
+        try:
+            from qiskit_aer import AerSimulator
+            from qiskit import transpile
+        except ImportError:
+            raise ImportError("Required: pip install qiskit-aer")
 
-    api_key, instance = _get_ibm_credentials()
-    _log.info("Connecting to IBM Quantum platform …")
-    service = QiskitRuntimeService(
-        channel="ibm_quantum_platform",
-        token=api_key,
-        instance=instance,
-    )
+        backend_name = "aer_simulator"
+        _log.info("Using local Aer simulator backend")
+        transpiled = transpile(qc, AerSimulator())
+        _log.info(
+            "Transpiled: depth=%d, gate count=%d",
+            transpiled.depth(),
+            sum(transpiled.count_ops().values()),
+        )
 
-    backend = _select_backend(service, min_qubits=n_total)
-    backend_name: str = backend.name
-
-    # ── Transpile ──────────────────────────────────────────────────────────
-    _log.info("Transpiling circuit for %s …", backend_name)
-    pm = generate_preset_pass_manager(optimization_level=1, backend=backend)
-    transpiled = pm.run(qc)
-    _log.info(
-        "Transpiled: depth=%d, gate count=%d",
-        transpiled.depth(),
-        sum(transpiled.count_ops().values()),
-    )
-
-    # ── Submit job ─────────────────────────────────────────────────────────
-    _log.info("Submitting Shor's circuit to %s (%d shots) …", backend_name, N_SHOTS)
-    wall_start = time.monotonic()
-
-    sampler = Sampler(backend)
-    job = sampler.run([transpiled], shots=N_SHOTS)
-    _log.info("Job ID: %s — waiting in queue …", job.job_id())
-
-    # Poll for completion (no timeout — wait as long as needed)
-    result = job.result()
-    wall_elapsed = time.monotonic() - wall_start
-
-    # Extract QPU execution time from result metadata
-    try:
-        usage = result.metadata.get("execution", {})
-        qpu_seconds = float(usage.get("execution_spans_seconds", wall_elapsed))
-    except (AttributeError, TypeError, ValueError):
+        _log.info("Executing on Aer simulator (%d shots) …", N_SHOTS)
+        wall_start = time.monotonic()
+        simulator = AerSimulator()
+        job = simulator.run(transpiled, shots=N_SHOTS)
+        result = job.result()
+        wall_elapsed = time.monotonic() - wall_start
         qpu_seconds = wall_elapsed
 
-    _log.info("Job completed — wall=%.1fs, QPU=%.1fs", wall_elapsed, qpu_seconds)
+        _log.info("Simulator execution completed — wall=%.1fs", wall_elapsed)
 
-    # ── Extract measurement counts ─────────────────────────────────────────
-    pub_result = result[0]
-    data = pub_result.data
-    creg_name = next(iter(vars(data)))
-    counts: dict[str, int] = getattr(data, creg_name).get_counts()
+        counts: dict[str, int] = result.get_counts()
+        job_id = "aer_simulator"
+    else:
+        # ── Connect to IBM Quantum ──────────────────────────────────────────────
+        try:
+            from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2 as Sampler
+            from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+        except ImportError:
+            raise ImportError("Required: pip install qiskit qiskit-ibm-runtime")
+
+        api_key, instance = _get_ibm_credentials()
+        _log.info("Connecting to IBM Quantum platform …")
+        service = QiskitRuntimeService(
+            channel="ibm_quantum_platform",
+            token=api_key,
+            instance=instance,
+        )
+
+        backend = _select_backend(service, min_qubits=n_total)
+        backend_name: str = backend.name
+
+        # ── Transpile ──────────────────────────────────────────────────────────
+        _log.info("Transpiling circuit for %s …", backend_name)
+        pm = generate_preset_pass_manager(optimization_level=1, backend=backend)
+        transpiled = pm.run(qc)
+        _log.info(
+            "Transpiled: depth=%d, gate count=%d",
+            transpiled.depth(),
+            sum(transpiled.count_ops().values()),
+        )
+
+        # ── Submit job ─────────────────────────────────────────────────────────
+        _log.info("Submitting Shor's circuit to %s (%d shots) …", backend_name, N_SHOTS)
+        wall_start = time.monotonic()
+
+        sampler = Sampler(backend)
+        job = sampler.run([transpiled], shots=N_SHOTS)
+        _log.info("Job ID: %s — waiting in queue …", job.job_id())
+
+        # Poll for completion (no timeout — wait as long as needed)
+        result = job.result()
+        wall_elapsed = time.monotonic() - wall_start
+
+        # Extract QPU execution time from result metadata
+        try:
+            usage = result.metadata.get("execution", {})
+            qpu_seconds = float(usage.get("execution_spans_seconds", wall_elapsed))
+        except (AttributeError, TypeError, ValueError):
+            qpu_seconds = wall_elapsed
+
+        _log.info("Job completed — wall=%.1fs, QPU=%.1fs", wall_elapsed, qpu_seconds)
+
+        # ── Extract measurement counts ─────────────────────────────────────────
+        pub_result = result[0]
+        data = pub_result.data
+        creg_name = next(iter(vars(data)))
+        counts: dict[str, int] = getattr(data, creg_name).get_counts()
+
+        job_id = job.job_id()
 
     _log.info("Top 5 measurement outcomes:")
     for bitstr, cnt in sorted(counts.items(), key=lambda x: -x[1])[:5]:
@@ -596,6 +629,13 @@ def _parse_args() -> argparse.Namespace:
         help="Build circuit and connect, but do not submit the IBM job.",
     )
     parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["ibm", "aer"],
+        default="ibm",
+        help="Backend to use for the benchmark: ibm or aer (local simulator).",
+    )
+    parser.add_argument(
         "--defer-reason",
         type=str,
         default="",
@@ -634,6 +674,7 @@ def main() -> None:
             n_value=args.n,
             dry_run=args.dry_run,
             max_qpu_seconds=args.max_qpu_seconds,
+            backend_choice=args.backend,
         )
     except Exception as exc:
         _log.error("Benchmark run failed: %s", exc)
