@@ -312,7 +312,7 @@ def _build_shor_circuit_n15(n_count: int = 4):
         # power%4==3 case doesn't arise with powers-of-2 when r=4
 
     # Step 4: Inverse QFT on counting register
-    iqft = QFTGate(n_count, do_swaps=True).inverse()
+    iqft = QFTGate(n_count).inverse()
     qc.append(iqft, counting)
 
     # Step 5: Measure counting register
