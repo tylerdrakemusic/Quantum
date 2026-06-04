@@ -10,7 +10,7 @@ Entropy source
 The ⟨ψ⟩Quantum project maintains rolling backups of quantum measurement
 outcomes in:
     f:\\⟨ψ⟩Quantum\\qbackups\\ty_string_cache_<timestamp>.txt
-    f:\\⟨ψ⟩Quantum\\src\\data\\qbackups\\ty_string_cache.txt   (latest)
+    f:\⟨ψ⟩Quantum\src\data\liveCache\ty_string_cache.txt   (latest)
 
 Each line in those files is a binary string (0/1 characters) representing
 raw qubit measurement results.  This module concatenates all lines into a
@@ -90,7 +90,7 @@ def _find_cache_files() -> list[Path]:
         _q_root = _this.parent.parent.parent  # src/utils -> src -> project root
 
     # Preferred: live cache
-    live = _q_root / "src" / "data" / "qbackups" / "ty_string_cache.txt"
+    live = _q_root / "src" / "data" / "liveCache" / "ty_string_cache.txt"
     if live.exists():
         candidates.append(live)
 

@@ -31,6 +31,7 @@ output/*.html
 *.qasm
 qbackups/
 src/data/liveCache/
+src/data/qbackups/
 reports/*.json
 
 # Generated dashboards (regenerate locally via tools/gen_benchmark_dashboard.py)
