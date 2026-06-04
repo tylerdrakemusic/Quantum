@@ -382,6 +382,10 @@ def _load_cache_widget_data() -> dict:
             except (json.JSONDecodeError, ValueError):
                 continue
 
+    # Sort by timestamp so out-of-order JSONL entries don't produce a stale
+    # drain curve (BFX-20260603-drain-curve-stale).
+    sparkline_points.sort(key=lambda x: x[0])
+
     # ── last fill peak ────────────────────────────────────────────────────
     # Primary: max remaining in JSONL; fallback to largest backup if JSONL empty
     last_fill_peak = jsonl_max
