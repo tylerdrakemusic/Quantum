@@ -29,6 +29,7 @@ import argparse
 import html
 import json
 import os
+import re
 import sys
 import webbrowser
 from collections import defaultdict
@@ -347,6 +348,13 @@ def _next_run_iso(day: int, hour: int, minute: int) -> str:
 # Cache widget data loader (FR-20260515-quantum-cache-widget)
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _parse_cache_backup_timestamp(filename: str) -> str | None:
+    m = re.search(r"ty_string_cache_(\d{8})_(\d{6})\.txt$", filename)
+    if not m:
+        return None
+    return f"{m.group(1)[:4]}-{m.group(1)[4:6]}-{m.group(1)[6:]}T{m.group(2)[:2]}:{m.group(2)[2:4]}:{m.group(2)[4:]}Z"
+
+
 def _load_cache_widget_data() -> dict:
     """Load quantum bitstring cache fullness data for the widget.
 
@@ -382,16 +390,27 @@ def _load_cache_widget_data() -> dict:
             except (json.JSONDecodeError, ValueError):
                 continue
 
+    backup_dir = _ROOT / "qbackups"
+    backup_max = 0
+    if backup_dir.exists():
+        for bk in sorted(backup_dir.glob("ty_string_cache_*.txt")):
+            bk_bits = bk.stat().st_size
+            if bk_bits > backup_max:
+                backup_max = bk_bits
+            ts = _parse_cache_backup_timestamp(bk.name)
+            if not ts:
+                continue
+            if not any(point[0] == ts for point in sparkline_points):
+                sparkline_points.append((ts, bk_bits))
+
+    # Keep history sorted by timestamp so the drain curve label and sparkline
+    # reflect the most recent data even when the JSONL log is written out of
+    # sequential order.
+    if sparkline_points:
+        sparkline_points.sort(key=lambda point: point[0] or "")
+
     # ── last fill peak ────────────────────────────────────────────────────
-    # Primary: max remaining in JSONL; fallback to largest backup if JSONL empty
-    last_fill_peak = jsonl_max
-    if last_fill_peak == 0:
-        backup_dir = _ROOT / "qbackups"
-        if backup_dir.exists():
-            for bk in sorted(backup_dir.glob("ty_string_cache_*.txt")):
-                bk_bits = bk.stat().st_size  # each char is 1 byte; size ≈ bit count
-                if bk_bits > last_fill_peak:
-                    last_fill_peak = bk_bits
+    last_fill_peak = max(jsonl_max, backup_max)
 
     # If live cache exceeds any logged peak, treat as just-filled (0% consumed)
     last_fill_peak = max(last_fill_peak, current_bits)
