@@ -21,7 +21,7 @@ Usage
 Output
 ------
     f:\\⟨ψ⟩Quantum\\qbackups\\ty_string_cache_<YYYYMMDD_HHMMSS>.txt  (timestamped backup)
-    f:\\⟨ψ⟩Quantum\\src\\data\\liveCache\\ty_string_cache.txt          (live, latest)
+    f:\⟨ψ⟩Quantum\src\data\liveCache\ty_string_cache.txt          (live, latest)
 
 Environment
 -----------
@@ -222,6 +222,39 @@ def _print_status() -> None:
         print(f"  {b.name}  ({b.stat().st_size:,} bytes)")
 
 
+def _persist_cache_fill(all_bitstrings: list[str]) -> int:
+    """Append new fill bits to the live cache and snapshot the result."""
+    _BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    _LIVE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Ensure the live cache file ends with a newline before appending.
+    if _LIVE_CACHE.exists():
+        try:
+            with open(_LIVE_CACHE, "rb") as fh:
+                fh.seek(-1, 2)
+                if fh.read(1) != b"\n":
+                    with open(_LIVE_CACHE, "a", encoding="utf-8") as append_fh:
+                        append_fh.write("\n")
+        except OSError:
+            pass
+
+    with open(_LIVE_CACHE, "a", encoding="utf-8") as fh:
+        for line in all_bitstrings:
+            fh.write(line + "\n")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    backup_path = _BACKUP_DIR / f"ty_string_cache_{timestamp}.txt"
+    shutil.copy2(_LIVE_CACHE, backup_path)
+
+    capacity_bytes = _LIVE_CACHE.stat().st_size
+    _CAPACITY_BASELINE.write_text(f"{capacity_bytes}\n", encoding="utf-8")
+
+    _logger.info("Capacity baseline: %s  (%d bytes)", _CAPACITY_BASELINE, capacity_bytes)
+    _logger.info("Backup written : %s  (%d bytes)", backup_path, backup_path.stat().st_size)
+    _logger.info("Live cache     : %s", _LIVE_CACHE)
+    return sum(len(b) for b in all_bitstrings)
+
+
 # ---------------------------------------------------------------------------
 # Main fill routine
 # ---------------------------------------------------------------------------
@@ -337,28 +370,7 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
         _logger.warning("No bits collected — cache not updated.")
         return 0
 
-    # Ensure output directories exist
-    _BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    _LIVE_DIR.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    backup_path = _BACKUP_DIR / f"ty_string_cache_{timestamp}.txt"
-
-    with open(backup_path, "w", encoding="utf-8") as fh:
-        for line in all_bitstrings:
-            fh.write(line + "\n")
-
-    shutil.copy2(backup_path, _LIVE_CACHE)
-
-    # Write fill-completion capacity baseline (byte-count) for depletion guard
-    capacity_bytes = _LIVE_CACHE.stat().st_size
-    _CAPACITY_BASELINE.write_text(f"{capacity_bytes}\n", encoding="utf-8")
-    _logger.info("Capacity baseline: %s  (%d bytes)", _CAPACITY_BASELINE, capacity_bytes)
-
-    _logger.info("Backup written : %s  (%d bytes)", backup_path, backup_path.stat().st_size)
-    _logger.info("Live cache     : %s", _LIVE_CACHE)
-
-    return total_bits
+    return _persist_cache_fill(all_bitstrings)
 
 
 # ---------------------------------------------------------------------------
