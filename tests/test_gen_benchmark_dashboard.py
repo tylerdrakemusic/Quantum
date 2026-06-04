@@ -44,3 +44,30 @@ def test_load_cache_widget_data_sorts_sparkline_points(tmp_path, monkeypatch):
     assert data["last_fill_peak"] == 1100000
     assert data["current_bits"] == 20
     assert data["pct_consumed"] == pytest.approx((1100000 - 20) / 1100000 * 100)
+
+
+def test_load_cache_widget_data_includes_backup_fill_date(tmp_path, monkeypatch):
+    root = tmp_path / "quantum"
+    live_dir = root / "src" / "data" / "liveCache"
+    live_dir.mkdir(parents=True)
+    (live_dir / "ty_string_cache.txt").write_text("01" * 10, encoding="utf-8")
+
+    data_dir = root / "src" / "data"
+    cache_file = data_dir / "cache_usage.jsonl"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(
+        '{"ts":"2026-04-15T18:43:03Z","remaining":1000}\n',
+        encoding="utf-8",
+    )
+
+    backup_dir = root / "qbackups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / "ty_string_cache_20260601_080334.txt"
+    backup_path.write_bytes(b"0" * 2000)
+
+    monkeypatch.setattr(module, "_ROOT", root)
+    data = module._load_cache_widget_data()
+
+    assert any(ts == "2026-06-01T08:03:34Z" for ts, _ in data["sparkline_points"])
+    assert data["last_fill_peak"] == 2000
+    assert data["sparkline_points"][-1][0] == "2026-06-01T08:03:34Z"
