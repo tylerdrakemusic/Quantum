@@ -360,8 +360,8 @@ def _load_cache_widget_data() -> dict:
 
     Returns dict with:
       current_bits      -- bit count in live cache file
-      last_fill_peak    -- bit count at last fill (max JSONL remaining, or largest backup)
-      pct_consumed      -- float 0-100 representing % consumed since last fill
+      last_fill_peak    -- peak cache size (max JSONL remaining, or largest backup, or current live cache)
+      pct_consumed      -- float 0-100 representing % consumed since the peak cache size
       sparkline_points  -- list of (ts_str, remaining_int) from cache_usage.jsonl
     """
     # ── live cache bit count ──────────────────────────────────────────────
@@ -828,10 +828,10 @@ def _build_cache_widget(data: dict) -> str:
         f'</div>'
         f'<div class="cache-stat">'
         f'<div class="cache-stat-val">{peak_mb}M</div>'
-        f'<div class="cache-stat-label">last fill peak</div>'
+        f'<div class="cache-stat-label">peak cache size</div>'
         f'</div>'
         f'</div>'
-        f'<div class="cache-section-label">Depletion Since Last Fill</div>'
+        f'<div class="cache-section-label">Depletion Since Peak</div>'
         f'{gauge_html}'
         f'{sparkline_html}'
         f'</div>'
