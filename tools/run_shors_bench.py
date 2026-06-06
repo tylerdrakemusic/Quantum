@@ -376,6 +376,38 @@ def _factors_from_order(a: int, r: int, N: int) -> tuple[int, int] | None:
     return None
 
 
+def _extract_counts_from_qiskit_result(result) -> dict[str, int]:
+    """Return measurement counts from a Qiskit runtime Sampler result."""
+    if hasattr(result, "get_counts") and callable(result.get_counts):
+        counts = result.get_counts()
+        if isinstance(counts, dict):
+            return counts
+
+    # Backward-compatible fallback for older runtime result wrappers.
+    pub_result = result[0]
+    data = pub_result.data
+
+    if hasattr(data, "get_counts") and callable(data.get_counts):
+        counts = data.get_counts()
+        if isinstance(counts, dict):
+            return counts
+
+    if hasattr(data, "meas") and hasattr(data.meas, "get_counts"):
+        counts = data.meas.get_counts()
+        if isinstance(counts, dict):
+            return counts
+
+    # Fall back to any named classical register field on the data object.
+    for field_name in vars(data):
+        field = getattr(data, field_name)
+        if hasattr(field, "get_counts") and callable(field.get_counts):
+            counts = field.get_counts()
+            if isinstance(counts, dict):
+                return counts
+
+    raise RuntimeError("Unable to extract measurement counts from Qiskit runtime result.")
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Main benchmark runner
 # ═══════════════════════════════════════════════════════════════════════════
@@ -464,10 +496,7 @@ def run_benchmark(
     _log.info("Job completed — wall=%.1fs, QPU=%.1fs", wall_elapsed, qpu_seconds)
 
     # ── Extract measurement counts ─────────────────────────────────────────
-    pub_result = result[0]
-    data = pub_result.data
-    creg_name = next(iter(vars(data)))
-    counts: dict[str, int] = getattr(data, creg_name).get_counts()
+    counts = _extract_counts_from_qiskit_result(result)
 
     _log.info("Top 5 measurement outcomes:")
     for bitstr, cnt in sorted(counts.items(), key=lambda x: -x[1])[:5]:
