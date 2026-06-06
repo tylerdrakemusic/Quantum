@@ -255,6 +255,19 @@ def _persist_cache_fill(all_bitstrings: list[str]) -> int:
     return sum(len(b) for b in all_bitstrings)
 
 
+def _extract_counts_from_sampler_result(result) -> dict[str, int]:
+    """Return measurement counts from a Qiskit runtime Sampler result."""
+    if hasattr(result, "get_counts") and callable(result.get_counts):
+        counts = result.get_counts()
+        if isinstance(counts, dict):
+            return counts
+
+    pub_result = result[0]
+    data = pub_result.data
+    creg_name = next(iter(vars(data)))
+    return getattr(data, creg_name).get_counts()
+
+
 # ---------------------------------------------------------------------------
 # Main fill routine
 # ---------------------------------------------------------------------------
@@ -338,13 +351,7 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
             jobs_completed += 1
 
             # Extract bitstrings from SamplerV2 result.
-            # Classical register is named after the creg in the circuit.
-            # QuantumCircuit(n, n) names it 'c0'; named circuits may differ.
-            pub_result = result[0]
-            data = pub_result.data
-            # Get the first BitArray attribute, whatever it's named
-            creg_name = next(iter(vars(data)))
-            counts = getattr(data, creg_name).get_counts()  # type: ignore[attr-defined]
+            counts = _extract_counts_from_sampler_result(result)
             bitstrings = _counts_to_bitstrings(counts)
             all_bitstrings.extend(bitstrings)
 
