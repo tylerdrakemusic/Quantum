@@ -135,6 +135,17 @@ def init_db() -> None:
 
     CREATE INDEX IF NOT EXISTS idx_cache_health_log_ts ON cache_health_log(ts);
 
+    -- Backend availability monitor results (FR-20260614-quantum-backend-availability-monitor)
+    CREATE TABLE IF NOT EXISTS backend_health (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider   TEXT    NOT NULL,
+        status     TEXT    NOT NULL CHECK(status IN ('up', 'down', 'unknown')),
+        latency_ms REAL,
+        error_msg  TEXT,
+        checked_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_backend_health_provider ON backend_health(provider, checked_at);
     -- Compliance audit runs (FR-20260527-execution-policy-auditor)
     CREATE TABLE IF NOT EXISTS policy_audit_runs (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,

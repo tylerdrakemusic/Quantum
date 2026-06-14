@@ -36,6 +36,14 @@
       "time_utc": "07:00",
       "command": "C:\\G\\python.exe tools\\audit_policy.py",
       "description": "Daily compliance audit of execution_policy.json: schema, linkage, QPU cap coverage, and backup drift checks."
+    },
+    "QuantumBackendAvailabilityMonitor_Daily": {
+      "policy_id": "QuantumBackendAvailabilityMonitor_Daily",
+      "task_name": "QuantumBackendAvailabilityMonitor_Daily",
+      "schedule": "daily",
+      "time_utc": "08:00",
+      "command": "C:\\G\\python.exe tools\\backend_availability_monitor.py",
+      "description": "Daily IBM Quantum + Amazon Braket availability monitor."
     }
   },
   "qpu_caps_seconds": {
@@ -43,6 +51,7 @@
     "shors_monthly_benchmark": 300,
     "vqe_monthly_benchmark": 600,
     "QuantumCacheDepletionGuard_Daily": 30,
-    "PolicyComplianceAudit_Daily": 30
+    "PolicyComplianceAudit_Daily": 30,
+    "QuantumBackendAvailabilityMonitor_Daily": 30
   }
 }

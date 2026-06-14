@@ -35,11 +35,11 @@ for _bp in _BRAVE_PATHS:
 
 # DB access
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
+from utils.init_db import get_connection
 
 
 def load_from_db() -> list[dict]:
     """Load benchmark rows from the encrypted quantumpsi.db."""
-    from utils.init_db import get_connection
     conn = get_connection()
     rows = conn.execute(
         "SELECT total_time_sec, required_qubits, n_value, order_r, "
@@ -68,6 +68,106 @@ def classify_backend(backend: str) -> str:
     if "aer" in low or "sim" in low or "fake" in low:
         return "simulator"
     return "hardware"
+
+
+def load_backend_health() -> list[dict]:
+    """Load the latest backend availability row per provider."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT provider, status, latency_ms, error_msg, checked_at
+            FROM backend_health
+            WHERE id IN (
+                SELECT MAX(id) FROM backend_health GROUP BY provider
+            )
+            ORDER BY provider
+            """
+        ).fetchall()
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+    return [
+        {
+            "provider": row[0],
+            "status": row[1],
+            "latency_ms": row[2] if row[2] is not None else 0.0,
+            "error_msg": row[3] or "",
+            "checked_at": row[4] or "",
+        }
+        for row in rows
+    ]
+
+
+def _status_to_class(status: str) -> str:
+    return {
+        "up": "success",
+        "down": "fail",
+        "unknown": "partial",
+    }.get(status, "partial")
+
+
+def _status_to_label(status: str) -> str:
+    if status == "up":
+        return "UP"
+    if status == "down":
+        return "DOWN"
+    return "UNKNOWN"
+
+
+def _backend_health_recommendation(rows: list[dict]) -> str:
+    if not rows:
+        return "No backend availability data is available yet."
+
+    status_by_provider = {row["provider"]: row["status"] for row in rows}
+    ibm = status_by_provider.get("ibm_quantum", "unknown")
+    braket = status_by_provider.get("amazon_braket", "unknown")
+
+    if ibm == "up" and braket != "up":
+        return "IBM Quantum is available. Use IBM Quantum for hardware workloads."
+    if braket == "up" and ibm != "up":
+        return "IBM Quantum is unavailable. Recommend Amazon Braket as the fallback provider."
+    if ibm == "down" and braket == "down":
+        return "Both cloud providers appear unavailable. Use Aer simulator until a backend returns online."
+    if ibm == "up" and braket == "up":
+        return "Both providers are available. IBM Quantum remains the primary hardware provider."
+    return "Backend availability status is partially known. Verify provider connectivity before scheduling QPU work."
+
+
+def build_backend_health_section(rows: list[dict]) -> str:
+    if not rows:
+        return "<p class='empty'>No backend availability data yet.</p>"
+
+    rows_html = [
+        "<table class='health-table'>",
+        "<thead><tr><th>Provider</th><th>Status</th><th>Latency (ms)</th><th>Error</th><th>Checked at</th></tr></thead>",
+        "<tbody>",
+    ]
+    for row in rows:
+        rows_html.append("<tr>")
+        rows_html.append(f"<td>{_esc(row['provider'])}</td>")
+        rows_html.append(
+            f"<td><span class='badge {_status_to_class(row['status'])}'>{_status_to_label(row['status'])}</span></td>"
+        )
+        rows_html.append(f"<td class='num'>{_esc(str(row['latency_ms'] or '—'))}</td>")
+        rows_html.append(f"<td>{_esc(row['error_msg'])}</td>")
+        rows_html.append(f"<td>{_esc(row['checked_at'])}</td>")
+        rows_html.append("</tr>")
+    rows_html.append("</tbody></table>")
+
+    recommendation = _backend_health_recommendation(rows)
+
+    return f"""
+    <div class='health-panel'>
+      <div class='health-card'>
+        <h3>Backend Availability Recommendation</h3>
+        <div class='health-recommendation'>{_esc(recommendation)}</div>
+      </div>
+      {''.join(rows_html)}
+    </div>
+    """
 
 
 def _esc(val: str) -> str:
@@ -151,10 +251,16 @@ def build_summary(hw_rows: list[dict], sim_rows: list[dict]) -> str:
     """
 
 
-def render_html(hw_rows: list[dict], sim_rows: list[dict], source: str = "quantumpsi.db") -> str:
+def render_html(
+    hw_rows: list[dict],
+    sim_rows: list[dict],
+    backend_health: list[dict],
+    source: str = "quantumpsi.db",
+) -> str:
     """Render the full HTML dashboard."""
     generated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     summary = build_summary(hw_rows, sim_rows)
+    backend_health_section = build_backend_health_section(backend_health)
     hw_table = build_table(hw_rows, "hw-table")
     sim_table = build_table(sim_rows, "sim-table")
 
@@ -271,6 +377,45 @@ def render_html(hw_rows: list[dict], sim_rows: list[dict], source: str = "quantu
   .badge.success {{ background: rgba(13,144,79,0.15); color: var(--success); }}
   .badge.fail {{ background: rgba(217,48,37,0.15); color: var(--fail); }}
   .badge.partial {{ background: rgba(249,171,0,0.15); color: var(--partial); }}
+  .health-panel {{
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }}
+  .health-card {{
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+  }}
+  .health-card h3 {{
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+    color: var(--text);
+  }}
+  .health-recommendation {{
+    color: var(--text);
+    line-height: 1.5;
+  }}
+  .health-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }}
+  .health-table th, .health-table td {{
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+  }}
+  .health-table th {{
+    text-align: left;
+    color: var(--muted);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid var(--border);
+  }}
+  .health-heading {{ color: #90caf9; border-color: #90caf9; }}
   .empty {{ color: var(--muted); font-style: italic; padding: 1rem; }}
   .footer {{
     margin-top: 3rem;
@@ -289,6 +434,9 @@ def render_html(hw_rows: list[dict], sim_rows: list[dict], source: str = "quantu
   </div>
 
   {summary}
+
+  <h2 class="health-heading">Backend Availability</h2>
+  {backend_health_section}
 
   <h2 class="hw-heading">IBM Quantum Hardware</h2>
   {hw_table}
@@ -310,9 +458,10 @@ def main(open_browser: bool = True) -> None:
 
     hw_rows = [r for r in rows if classify_backend(r.get("backend", "")) == "hardware"]
     sim_rows = [r for r in rows if classify_backend(r.get("backend", "")) == "simulator"]
+    backend_health = load_backend_health()
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    html_content = render_html(hw_rows, sim_rows, source=source)
+    html_content = render_html(hw_rows, sim_rows, backend_health, source=source)
     OUT_PATH.write_text(html_content, encoding="utf-8")
     print(f"Dashboard written to {OUT_PATH}")
 
