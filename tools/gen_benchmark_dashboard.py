@@ -1425,6 +1425,9 @@ def serve(port: int = 8210, no_open: bool = False) -> None:
                 except Exception as exc:
                     self._send_json(500, {"error": str(exc)})
 
+            elif path == "/health":
+                self._send_json(200, {"ok": True, "port": self.server.server_address[1]})
+
             else:
                 self.send_response(404)
                 self.end_headers()
