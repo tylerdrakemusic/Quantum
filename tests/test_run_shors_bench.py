@@ -1,6 +1,7 @@
 """Tests for tools/run_shors_bench.py."""
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -70,3 +71,42 @@ def test_run_shors_bench_uses_result_get_counts(monkeypatch: pytest.MonkeyPatch)
     assert result["qpu_seconds"] == 1.23
     assert result["factor_found"] is None
     assert result["success"] is False
+
+
+def test_main_dashboard_regen_uses_static_mode_with_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """BFX-20260701: dashboard regen subprocess must pass --static and a timeout.
+
+    Without --static, gen_benchmark_dashboard.py defaults to a long-running
+    live server that never exits, hanging subprocess.run() forever and
+    preventing the run_completed policy_events row from ever being logged.
+    """
+    fake_result = {
+        "backend": "fake-backend",
+        "qpu_seconds": 1.0,
+        "factor_found": None,
+        "success": False,
+        "n_value": 15,
+        "n_qubits": 8,
+    }
+
+    monkeypatch.setattr(rsb, "_parse_args", lambda: argparse.Namespace(
+        n=15, max_qpu_seconds=rsb.MAX_QPU_SECONDS, dry_run=False,
+        defer_reason="", manual_override_note="",
+    ))
+    monkeypatch.setattr(rsb, "log_policy_event", MagicMock())
+    monkeypatch.setattr(rsb, "run_benchmark", lambda **kwargs: fake_result)
+    monkeypatch.setattr(rsb, "persist_result", lambda result: 1)
+    monkeypatch.setattr(rsb, "print_db_row", MagicMock())
+
+    fake_run = MagicMock()
+    monkeypatch.setattr(rsb.subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        rsb.main()
+
+    fake_run.assert_called_once()
+    call_args = fake_run.call_args
+    cmd_args = call_args.args[0]
+    assert "--static" in cmd_args
+    assert "--no-open" in cmd_args
+    assert call_args.kwargs.get("timeout") == 120
