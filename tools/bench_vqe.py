@@ -88,8 +88,19 @@ def _build_problem(fixture_name: str):
     return qop, problem, mapper, float(m.nuclear_repulsion), float(m.fci_energy)
 
 
-def run_vqe(molecule: str, backend_label: str = "aer_statevector") -> dict:
-    """Run VQE on one molecule and return result dict."""
+def run_vqe(
+    molecule: str,
+    backend_label: str = "aer_statevector",
+    estimator=None,
+    qpu_backend=None,
+) -> dict:
+    """Run VQE on one molecule and return result dict.
+
+    When `estimator` (a Qiskit IBM Runtime EstimatorV2) and `qpu_backend` are
+    supplied, the energy evaluation loop evaluates ⟨ψ|H|ψ⟩ via EstimatorV2
+    against the real backend's ISA. Otherwise it falls back to the fast
+    Aer/Statevector sparse-matrix evaluation.
+    """
     cfg = MOLECULES[molecule]
     print("=" * 64)
     print(f"  VQE BENCHMARK -- {cfg['label']} (R={cfg['bond_length']} A)")
@@ -98,9 +109,6 @@ def run_vqe(molecule: str, backend_label: str = "aer_statevector") -> dict:
 
     qop, problem, mapper, nuc, fci_total = _build_problem(cfg["fixture"])
     print(f"  qubits={qop.num_qubits}  pauli_terms={len(qop)}  FCI={fci_total:.6f}")
-
-    # Sparse Hamiltonian for fast ⟨ψ|H|ψ⟩
-    H_sparse = qop.to_matrix(sparse=True)
 
     hf = HartreeFock(problem.num_spatial_orbitals, problem.num_particles, mapper)
     ans = UCCSD(problem.num_spatial_orbitals, problem.num_particles, mapper, initial_state=hf)
@@ -113,14 +121,34 @@ def run_vqe(molecule: str, backend_label: str = "aer_statevector") -> dict:
     eval_count = [0]
     best_e = [float("inf")]
 
-    def energy_fn(theta: np.ndarray) -> float:
-        eval_count[0] += 1
-        bound = ans.assign_parameters(dict(zip(params, theta)))
-        sv = np.asarray(Statevector(bound).data)
-        e = float(np.real(np.vdot(sv, H_sparse @ sv)))
-        if e < best_e[0]:
-            best_e[0] = e
-        return e
+    if estimator is not None:
+        # ── QPU path: EstimatorV2 against the selected real backend ────────
+        from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+
+        pm = generate_preset_pass_manager(optimization_level=1, backend=qpu_backend)
+        isa_ansatz = pm.run(ans)
+        isa_obs = qop.apply_layout(isa_ansatz.layout)
+
+        def energy_fn(theta: np.ndarray) -> float:
+            eval_count[0] += 1
+            job = estimator.run([(isa_ansatz, isa_obs, theta)])
+            result = job.result()
+            e = float(result[0].data.evs)
+            if e < best_e[0]:
+                best_e[0] = e
+            return e
+    else:
+        # ── Aer path: sparse Hamiltonian + Statevector for fast ⟨ψ|H|ψ⟩ ────
+        H_sparse = qop.to_matrix(sparse=True)
+
+        def energy_fn(theta: np.ndarray) -> float:
+            eval_count[0] += 1
+            bound = ans.assign_parameters(dict(zip(params, theta)))
+            sv = np.asarray(Statevector(bound).data)
+            e = float(np.real(np.vdot(sv, H_sparse @ sv)))
+            if e < best_e[0]:
+                best_e[0] = e
+            return e
 
     ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     t0 = time.time()
