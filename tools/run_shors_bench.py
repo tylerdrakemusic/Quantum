@@ -698,10 +698,14 @@ def main() -> None:
     # Regenerate dashboard
     dash_script = _ROOT / "tools" / "gen_benchmark_dashboard.py"
     try:
+        # --static is required: without it gen_benchmark_dashboard.py
+        # starts a long-running local server and never returns, which
+        # would block this script forever before it can log run_completed.
         subprocess.run(
-            [sys.executable, str(dash_script), "--no-open"],
+            [sys.executable, str(dash_script), "--static", "--no-open"],
             check=True,
             cwd=str(_ROOT),
+            timeout=120,
         )
         _log.info("Dashboard regenerated.")
     except Exception as exc:
