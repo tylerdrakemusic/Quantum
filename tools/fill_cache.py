@@ -268,6 +268,14 @@ def _extract_counts_from_sampler_result(result) -> dict[str, int]:
     return getattr(data, creg_name).get_counts()
 
 
+def _job_status_row(conn, job_id: str):
+    """Return the job_retry_status row (status, error_msg) for job_id."""
+    return conn.execute(
+        "SELECT status, error_msg FROM job_retry_status WHERE job_id = ?",
+        (job_id,),
+    ).fetchone()
+
+
 # ---------------------------------------------------------------------------
 # Main fill routine
 # ---------------------------------------------------------------------------
@@ -316,43 +324,58 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
     pm = generate_preset_pass_manager(optimization_level=1, backend=backend)
     transpiled = pm.run(qc)
 
-    # ----- Job loop -----
+    # ----- Job loop — supervised via RetrySupervisor (retry/backoff + IBM call cap) -----
+    import init_db
+    from job_retry_supervisor import Job, JobStatus, RetrySupervisor
+
     all_bitstrings: list[str] = []
     jobs_submitted = 0
     jobs_completed = 0
     qpu_seconds_consumed = 0.0
+    job_failed = False
+    failed_job_id: Optional[str] = None
+    failed_error_msg: Optional[str] = None
 
     sampler = Sampler(backend)
 
+    conn = init_db.get_connection()
+    supervisor = RetrySupervisor(conn=conn)
+
     while qpu_seconds_consumed < max_qpu_seconds:
         remaining = max_qpu_seconds - qpu_seconds_consumed
+        jobs_submitted += 1
+        job_id = f"fill-cache-{jobs_submitted}"
         _logger.info(
             "Submitting job %d  (QPU used: %.1fs / %ds, remaining: %.1fs)",
-            jobs_submitted + 1, qpu_seconds_consumed, max_qpu_seconds, remaining,
+            jobs_submitted, qpu_seconds_consumed, max_qpu_seconds, remaining,
         )
 
-        try:
-            job = sampler.run([transpiled], shots=N_SHOTS)
-            jobs_submitted += 1
+        outcome: dict = {}
 
-            # Poll for completion
+        def _run_fn(sampler=sampler, transpiled=transpiled, outcome=outcome) -> None:
+            job = sampler.run([transpiled], shots=N_SHOTS)
             poll_start = time.monotonic()
             result = job.result()
             wall_elapsed = time.monotonic() - poll_start
-
-            # Extract QPU execution time from result metadata if available
             try:
                 usage = result.metadata.get("execution", {})
                 qpu_elapsed = float(usage.get("execution_spans_seconds", wall_elapsed))
             except (AttributeError, TypeError, ValueError):
                 qpu_elapsed = wall_elapsed
+            counts = _extract_counts_from_sampler_result(result)
+            outcome["qpu_elapsed"] = qpu_elapsed
+            outcome["bitstrings"] = _counts_to_bitstrings(counts)
 
+        supervisor.enqueue(Job(job_id=job_id, backend="ibm", run_fn=_run_fn))
+        supervisor.run_all()
+        supervisor._queue.clear()
+
+        row = _job_status_row(conn, job_id)
+        if row is not None and row["status"] == JobStatus.SUCCEEDED.value:
+            qpu_elapsed = outcome["qpu_elapsed"]
+            bitstrings = outcome["bitstrings"]
             qpu_seconds_consumed += qpu_elapsed
             jobs_completed += 1
-
-            # Extract bitstrings from SamplerV2 result.
-            counts = _extract_counts_from_sampler_result(result)
-            bitstrings = _counts_to_bitstrings(counts)
             all_bitstrings.extend(bitstrings)
 
             _logger.info(
@@ -360,10 +383,17 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
                 jobs_completed, qpu_elapsed, len(bitstrings),
                 sum(len(b) for b in all_bitstrings),
             )
-
-        except Exception as exc:  # noqa: BLE001
-            _logger.warning("Job %d failed: %s — stopping.", jobs_submitted, exc)
+        else:
+            job_failed = True
+            failed_job_id = job_id
+            failed_error_msg = row["error_msg"] if row is not None else "unknown error"
+            _logger.warning(
+                "Job %s failed (job_id=%s): %s — stopping.",
+                jobs_submitted, job_id, failed_error_msg,
+            )
             break
+
+    conn.close()
 
     # ----- Write output -----
     total_bits = sum(len(b) for b in all_bitstrings)
@@ -373,11 +403,27 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
     _logger.info("QPU time used  : %.1f s", qpu_seconds_consumed)
     _logger.info("Total bits     : %d", total_bits)
 
+    if job_failed:
+        _logger.error(
+            "Permanent job failure — job_id=%s error=%s (partial results preserved: %d bits)",
+            failed_job_id, failed_error_msg, total_bits,
+        )
+
     if total_bits == 0:
         _logger.warning("No bits collected — cache not updated.")
+        if job_failed:
+            raise RuntimeError(
+                f"fill_cache job {failed_job_id} failed permanently: {failed_error_msg}"
+            )
         return 0
 
-    return _persist_cache_fill(all_bitstrings)
+    persisted_bits = _persist_cache_fill(all_bitstrings)
+    if job_failed:
+        raise RuntimeError(
+            f"fill_cache job {failed_job_id} failed permanently: {failed_error_msg} "
+            f"(partial success preserved: {persisted_bits} bits written to cache)"
+        )
+    return persisted_bits
 
 
 # ---------------------------------------------------------------------------
