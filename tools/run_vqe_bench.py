@@ -237,16 +237,32 @@ def resolve_backend_choice(
 
 def run_all_molecules(
     molecules: list[str], backend_label: str, max_qpu_seconds: int,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """Run each molecule via bench_vqe.run_vqe(), aborting if the hard wall-clock
-    cap would be exceeded before starting the next molecule."""
+    cap would be exceeded before starting the next molecule.
+
+    Each molecule run is wrapped as a `Job` and executed through
+    `RetrySupervisor` (retry/backoff + shared IBM call-cap circuit breaker).
+    On a permanent per-molecule failure, the job_id + error are logged and
+    that molecule is skipped — partial successes already collected are kept.
+
+    Returns (results, any_job_failed).
+    """
+    import init_db
+    from job_retry_supervisor import Job, JobStatus, RetrySupervisor
+
     results: list[dict] = []
     wall_start = time.monotonic()
+    any_job_failed = False
 
     estimator = None
     qpu_backend = None
     if backend_label == "ibm_qpu_estimator_v2":
         estimator, qpu_backend = _build_qpu_estimator(molecules)
+
+    supervisor_backend = "ibm" if backend_label == "ibm_qpu_estimator_v2" else "aer"
+    conn = init_db.get_connection()
+    supervisor = RetrySupervisor(conn=conn)
 
     for i, molecule in enumerate(molecules):
         elapsed = time.monotonic() - wall_start
@@ -260,11 +276,34 @@ def run_all_molecules(
             log_policy_event(event_type="run_deferred", status="deferred", detail=detail)
             break
 
-        result = _bench_vqe_run_vqe(
-            molecule, backend_label=backend_label,
-            estimator=estimator, qpu_backend=qpu_backend,
-        )
-        results.append(result)
+        job_id = f"vqe-{molecule}"
+        outcome: dict = {}
+
+        def _run_fn(
+            molecule=molecule, backend_label=backend_label,
+            estimator=estimator, qpu_backend=qpu_backend, outcome=outcome,
+        ) -> None:
+            outcome["result"] = _bench_vqe_run_vqe(
+                molecule, backend_label=backend_label,
+                estimator=estimator, qpu_backend=qpu_backend,
+            )
+
+        supervisor.enqueue(Job(job_id=job_id, backend=supervisor_backend, run_fn=_run_fn))
+        supervisor.run_all()
+        supervisor._queue.clear()
+
+        row = conn.execute(
+            "SELECT status, error_msg FROM job_retry_status WHERE job_id = ?", (job_id,)
+        ).fetchone()
+
+        if row is not None and row["status"] == JobStatus.SUCCEEDED.value:
+            results.append(outcome["result"])
+        else:
+            any_job_failed = True
+            error_msg = row["error_msg"] if row is not None else "unknown error"
+            detail = f"VQE job {job_id} failed permanently: {error_msg}"
+            _log.error(detail)
+            log_policy_event(event_type="run_completed", status="failed", detail=detail)
 
         elapsed_after = time.monotonic() - wall_start
         if elapsed_after >= max_qpu_seconds and i + 1 < len(molecules):
@@ -278,7 +317,9 @@ def run_all_molecules(
             log_policy_event(event_type="run_deferred", status="deferred", detail=detail)
             break
 
-    return results
+    conn.close()
+
+    return results, any_job_failed
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -353,7 +394,7 @@ def main() -> None:
     molecules = ["h2", "lih"] if args.molecule == "all" else [args.molecule]
 
     try:
-        results = run_all_molecules(
+        results, any_job_failed = run_all_molecules(
             molecules, backend_label=backend_label, max_qpu_seconds=args.max_qpu_seconds,
         )
     except Exception as exc:
@@ -401,6 +442,11 @@ def main() -> None:
     print(f"  Backend: {backend_label}")
     print(f"{'='*56}\n")
 
+    # A permanent per-molecule job failure must exit non-zero even if the
+    # molecules that DID succeed met their accuracy target — but partial
+    # successes already persisted/dashboarded above are never discarded.
+    if any_job_failed:
+        sys.exit(1)
     sys.exit(0 if all_met else 1)
 
 
