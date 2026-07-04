@@ -33,3 +33,19 @@ CREATE TABLE IF NOT EXISTS cache_health_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cache_health_log_ts ON cache_health_log(ts);
+
+-- Batch job retry/backoff status (FR-20260704-qiskit-aer-retry-supervisor)
+CREATE TABLE IF NOT EXISTS job_retry_status (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id       TEXT    NOT NULL UNIQUE,
+    backend      TEXT    NOT NULL CHECK(backend IN ('aer', 'ibm')),
+    status       TEXT    NOT NULL CHECK(status IN ('pending', 'running', 'succeeded', 'failed', 'retrying')),
+    attempt      INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 3,
+    error_msg    TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_retry_status_job_id ON job_retry_status(job_id);
+
