@@ -474,29 +474,51 @@ def run_benchmark(
         sum(transpiled.count_ops().values()),
     )
 
-    # ── Submit job ─────────────────────────────────────────────────────────
+    # ── Submit job — supervised via RetrySupervisor (retry/backoff + IBM call cap) ──
     _log.info("Submitting Shor's circuit to %s (%d shots) …", backend_name, N_SHOTS)
-    wall_start = time.monotonic()
+
+    import init_db
+    from job_retry_supervisor import Job, JobStatus, RetrySupervisor
 
     sampler = Sampler(backend)
-    job = sampler.run([transpiled], shots=N_SHOTS)
-    _log.info("Job ID: %s — waiting in queue …", job.job_id())
+    job_id = f"shors-n{n_value}"
+    outcome: dict = {}
 
-    # Poll for completion (no timeout — wait as long as needed)
-    result = job.result()
-    wall_elapsed = time.monotonic() - wall_start
+    def _run_fn(sampler=sampler, transpiled=transpiled, outcome=outcome) -> None:
+        wall_start = time.monotonic()
+        job = sampler.run([transpiled], shots=N_SHOTS)
+        _log.info("Job ID: %s — waiting in queue …", job.job_id())
+        result = job.result()
+        wall_elapsed = time.monotonic() - wall_start
+        try:
+            usage = result.metadata.get("execution", {})
+            qpu_seconds = float(usage.get("execution_spans_seconds", wall_elapsed))
+        except (AttributeError, TypeError, ValueError):
+            qpu_seconds = wall_elapsed
+        outcome["qpu_seconds"] = qpu_seconds
+        outcome["counts"] = _extract_counts_from_qiskit_result(result)
+        outcome["ibm_job_id"] = job.job_id()
 
-    # Extract QPU execution time from result metadata
-    try:
-        usage = result.metadata.get("execution", {})
-        qpu_seconds = float(usage.get("execution_spans_seconds", wall_elapsed))
-    except (AttributeError, TypeError, ValueError):
-        qpu_seconds = wall_elapsed
+    conn = init_db.get_connection()
+    supervisor = RetrySupervisor(conn=conn)
+    supervisor.enqueue(Job(job_id=job_id, backend="ibm", run_fn=_run_fn))
+    supervisor.run_all()
 
-    _log.info("Job completed — wall=%.1fs, QPU=%.1fs", wall_elapsed, qpu_seconds)
+    row = conn.execute(
+        "SELECT status, error_msg FROM job_retry_status WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    conn.close()
+
+    if row is None or row["status"] != JobStatus.SUCCEEDED.value:
+        error_msg = row["error_msg"] if row is not None else "unknown error"
+        _log.error("Shor's benchmark job failed permanently: job_id=%s error=%s", job_id, error_msg)
+        raise RuntimeError(f"Shor's benchmark job {job_id} failed permanently: {error_msg}")
+
+    qpu_seconds = outcome["qpu_seconds"]
+    _log.info("Job completed — QPU=%.1fs", qpu_seconds)
 
     # ── Extract measurement counts ─────────────────────────────────────────
-    counts = _extract_counts_from_qiskit_result(result)
+    counts = outcome["counts"]
 
     _log.info("Top 5 measurement outcomes:")
     for bitstr, cnt in sorted(counts.items(), key=lambda x: -x[1])[:5]:
@@ -531,7 +553,7 @@ def run_benchmark(
     _log.info("Factors: %s", factor_found if factor_found else "not found")
     _log.info("Success: %s", success)
 
-    notes = f"a=7, N_COUNT={N_COUNT}, phase={best_phase}, r={r}, job={job.job_id()}"
+    notes = f"a=7, N_COUNT={N_COUNT}, phase={best_phase}, r={r}, job={outcome['ibm_job_id']}"
 
     return {
         "n_value": n_value,
