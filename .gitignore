@@ -98,6 +98,7 @@ src/data/backups/
 *.tmp
 
 # Proof / QA screenshots (ephemeral QA artifacts — not committed to git)
+proof/*
 proof/**/*.png
 proof/**/*.jpg
 proof/**/*.jpeg
