@@ -121,3 +121,22 @@ def resolve_database_path(project_root: Path, entry: dict[str, Any]) -> Path:
     if root not in resolved.parents:
         raise ValueError("database inventory path escaped the project root")
     return resolved
+
+
+def build_backup_manifest(inventory: dict[str, Any]) -> dict[str, Any]:
+    """Project every inventory entry into the generic backup lifecycle contract."""
+    return {
+        "schema_version": 1,
+        "fr": inventory.get("fr", "FR-20260816-workspace-local-database-backup"),
+        "policy_status": "reviewed",
+        "purpose": "Project database backup inventory.",
+        "content_boundary": "Redacted database policy metadata only.",
+        "classifications": sorted(CLASSIFICATIONS),
+        "databases": [
+            {**entry, "key_env": entry["key_env"]}
+            for entry in inventory["databases"]
+        ],
+        "exclusions": [],
+        "not_implemented": [],
+        "separate_todos": [],
+    }
