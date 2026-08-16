@@ -1,5 +1,7 @@
 # ⟨ψ⟩Quantum — Quantum Computing Toolkit
 
+Database backup metadata is documented in [docs/database-backup-inventory.md](docs/database-backup-inventory.md).
+
 Tyler James Drake's quantum computing project. Provides quantum random number generation, IBM Quantum backend management, algorithm research, and a cache of true quantum random bits for use across projects.
 
 ## Architecture
