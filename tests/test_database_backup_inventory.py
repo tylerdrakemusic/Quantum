@@ -23,11 +23,12 @@ def _inventory(databases: list[dict[str, object]]) -> dict[str, object]:
 def _database(**overrides: object) -> dict[str, object]:
     database: dict[str, object] = {
         "id": "quantum-quantumpsi",
-        "path": "src/data/quantumpsi.db",
+        "locator": "quantum/application-store",
+        "basename": "quantumpsi.db",
         "classification": "canonical",
         "backup_allowed": True,
         "encryption": "sqlcipher",
-        "key_env": "QUANTUM_DB_KEY",
+        "key_env_var": "QUANTUM_DB_KEY",
         "reason": "Authoritative encrypted Quantum application database.",
     }
     database.update(overrides)
@@ -53,7 +54,7 @@ def test_inventory_contains_key_reference_but_never_key_material(
 
     inventory = load_database_inventory(inventory_path)
 
-    assert inventory["databases"][0]["key_env"] == "QUANTUM_DB_KEY"
+    assert inventory["databases"][0]["key_env_var"] == "QUANTUM_DB_KEY"
     serialized = json.dumps(inventory).lower()
     assert "key_value" not in serialized
     assert "secret" not in serialized
@@ -62,7 +63,8 @@ def test_inventory_contains_key_reference_but_never_key_material(
 def test_inventory_entries_are_configuration_driven(tmp_path: Path) -> None:
     future_database = _database(
         id="quantum-approved-future-store",
-        path="src/data/future_store.sqlite3",
+        locator="quantum/future-store",
+        basename="future_store.sqlite3",
         reason="Approved future canonical encrypted store.",
     )
     inventory_path = tmp_path / "database_backup_inventory.json"
@@ -82,12 +84,17 @@ def test_inventory_projects_new_entry_into_generic_backup_manifest(tmp_path: Pat
     inventory_path = tmp_path / "database_backup_inventory.json"
     inventory_path.write_text(json.dumps(_inventory([_database(
         id="quantum-approved-future-store",
-        path="src/data/future_store.sqlite3",
+        locator="quantum/future-store",
+        basename="future_store.sqlite3",
     )])), encoding="utf-8")
 
     manifest = build_backup_manifest(load_database_inventory(inventory_path))
 
-    assert manifest["databases"][0]["path"] == "src/data/future_store.sqlite3"
+    assert manifest["databases"][0]["path"] == "quantum/future-store"
+    assert manifest["databases"][0]["discovery"] == {
+        "project": "quantum",
+        "basename": "future_store.sqlite3",
+    }
     assert manifest["databases"][0]["key_env"] == "QUANTUM_DB_KEY"
 
 
@@ -100,14 +107,15 @@ def test_resolve_database_path_stays_within_project_root(tmp_path: Path) -> None
 @pytest.mark.parametrize(
     "entry",
     [
-        _database(path="../../outside.db"),
+        _database(locator="../outside-store"),
         _database(
             id="quantum-orion-config",
             path="src/data/orion_config.db",
             classification="derived",
         ),
         _database(encryption="sqlite"),
-        _database(key_env="not-an-environment-variable"),
+        _database(key_env_var="not-an-environment-variable"),
+            _database(key_env_var="not-an-environment-variable"),
         _database(backup_allowed=True, classification="approval-required"),
     ],
 )
