@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,16 @@ from src.utils.database_backup_inventory import (
     build_backup_manifest,
     load_database_inventory,
     resolve_database_path,
+)
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "⊕Workspace" / ".worktrees" / "feature-FR-20260816-workspace-local-database-backup"))
+import src.utils  # noqa: E402
+src.utils.__path__.insert(0, str(Path(__file__).resolve().parents[4] / "⊕Workspace" / ".worktrees" / "feature-FR-20260816-workspace-local-database-backup" / "src" / "utils"))
+from src.utils.database_backup import (  # noqa: E402
+    DatabaseBackup,
+    LocalVolumeDestination,
+    discover_and_validate_manifest,
+    validate_recent_backups,
 )
 
 
@@ -129,3 +140,30 @@ def test_inventory_rejects_unsafe_or_excluded_database_entries(
 
     with pytest.raises(ValueError):
         load_database_inventory(inventory_path)
+
+
+def test_committed_inventory_runs_shared_backup_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WORKSPACE_BACKUP_MANIFEST_KEY", "test-quantum-key")
+    project_root = Path(__file__).resolve().parent.parent
+    manifest = build_backup_manifest(load_database_inventory(project_root / "src" / "config" / "database_backup_inventory.json"))
+    source_root = tmp_path / "quantum"
+    source = source_root / "src" / "data" / "quantumpsi.db"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"isolated-fixture")
+    destination = LocalVolumeDestination(tmp_path / "external", "quantum-volume", provision=True)
+    for second in (0, 1):
+        DatabaseBackup(manifest, {"quantum": source_root}, destination, "quantum-volume", now=lambda second=second: f"2026-08-16T12:00:0{second}Z", retention=1).run()
+    assert len(list((destination.path() / "generations").iterdir())) == 1
+    drift = source_root / "src" / "data" / "unexpected.db"
+    drift.write_bytes(b"drift")
+    with pytest.raises(ValueError, match="unregistered"):
+        discover_and_validate_manifest(manifest, {"quantum": source_root})
+    drift.unlink()
+    manifest_path = next((destination.path() / "generations").glob("*/manifest.json"))
+    restore_root = tmp_path / "restore"
+    DatabaseBackup.restore(manifest_path, destination, restore_root, True, "quantum-volume", allow_canonical_restore=True)
+    assert (restore_root / "quantum/application-store").read_bytes() == b"isolated-fixture"
+    validate_recent_backups(destination, "quantum-volume", restore_validator=lambda *_: None)
+    assert str(restore_root) not in (destination.path() / "backup-audit.jsonl").read_text(encoding="utf-8")
