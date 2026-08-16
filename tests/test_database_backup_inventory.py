@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from src.utils.database_backup_inventory import (
+    build_backup_manifest,
     load_database_inventory,
     resolve_database_path,
 )
@@ -75,6 +76,19 @@ def test_inventory_entries_are_configuration_driven(tmp_path: Path) -> None:
         "quantum-quantumpsi",
         "quantum-approved-future-store",
     ]
+
+
+def test_inventory_projects_new_entry_into_generic_backup_manifest(tmp_path: Path) -> None:
+    inventory_path = tmp_path / "database_backup_inventory.json"
+    inventory_path.write_text(json.dumps(_inventory([_database(
+        id="quantum-approved-future-store",
+        path="src/data/future_store.sqlite3",
+    )])), encoding="utf-8")
+
+    manifest = build_backup_manifest(load_database_inventory(inventory_path))
+
+    assert manifest["databases"][0]["path"] == "src/data/future_store.sqlite3"
+    assert manifest["databases"][0]["key_env"] == "QUANTUM_DB_KEY"
 
 
 def test_resolve_database_path_stays_within_project_root(tmp_path: Path) -> None:
