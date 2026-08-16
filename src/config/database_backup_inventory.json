@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "project": "quantum",
+  "databases": [
+    {
+      "id": "quantum-quantumpsi",
+      "path": "src/data/quantumpsi.db",
+      "classification": "canonical",
+      "backup_allowed": true,
+      "encryption": "sqlcipher",
+      "key_env": "QUANTUM_DB_KEY",
+      "reason": "Authoritative encrypted Quantum application database."
+    }
+  ]
+}
