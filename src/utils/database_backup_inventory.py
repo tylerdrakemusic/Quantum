@@ -11,11 +11,12 @@ from typing import Any
 REQUIRED_ROOT_FIELDS = {"schema_version", "project", "databases"}
 REQUIRED_DATABASE_FIELDS = {
     "id",
-    "path",
+    "locator",
+    "basename",
     "classification",
     "backup_allowed",
     "encryption",
-    "key_env",
+    "key_env_var",
     "reason",
 }
 CLASSIFICATIONS = {
@@ -47,19 +48,21 @@ def _validate_database_entry(entry: Any) -> None:
     if not isinstance(database_id, str) or not IDENTIFIER_PATTERN.fullmatch(database_id):
         raise ValueError("database inventory id must be a safe identifier")
 
-    path = entry["path"]
-    if not isinstance(path, str) or not path.strip():
-        raise ValueError("database inventory path must be non-empty")
-    normalized_path = path.replace("\\", "/")
-    path_parts = normalized_path.split("/")
+    locator = entry["locator"]
+    if not isinstance(locator, str) or not locator.strip():
+        raise ValueError("database inventory locator must be non-empty")
+    locator_parts = locator.replace("\\", "/").split("/")
     if (
-        Path(normalized_path).is_absolute()
-        or any(part in {"", ".", ".."} for part in path_parts)
-        or "\\" in path
-        or ":" in path
-        or Path(normalized_path).suffix.lower() not in DATABASE_SUFFIXES
+        Path(locator).is_absolute()
+        or len(locator_parts) != 2
+        or any(part in {"", ".", ".."} for part in locator_parts)
+        or "\\" in locator
+        or ":" in locator
     ):
-        raise ValueError("database inventory paths must be relative database paths")
+        raise ValueError("database inventory locators must be project-relative")
+    basename = entry["basename"]
+    if not isinstance(basename, str) or Path(basename).name != basename or Path(basename).suffix.lower() not in DATABASE_SUFFIXES:
+        raise ValueError("database inventory basename must be a database filename")
 
     classification = entry["classification"]
     if classification not in CLASSIFICATIONS:
@@ -71,7 +74,7 @@ def _validate_database_entry(entry: Any) -> None:
     if entry["encryption"] != "sqlcipher":
         raise ValueError("Quantum database inventory requires SQLCipher")
 
-    key_env = entry["key_env"]
+    key_env = entry["key_env_var"]
     if not isinstance(key_env, str) or not KEY_ENV_PATTERN.fullmatch(key_env):
         raise ValueError("database inventory key_env must be an environment variable name")
     if not isinstance(entry["reason"], str) or not entry["reason"].strip():
@@ -100,16 +103,16 @@ def load_database_inventory(path: Path) -> dict[str, Any]:
         raise ValueError("database inventory databases must be a non-empty list")
 
     ids: set[str] = set()
-    paths: set[str] = set()
+    locators: set[str] = set()
     for entry in databases:
         _validate_database_entry(entry)
         if entry["id"] in ids:
             raise ValueError(f"duplicate database inventory id: {entry['id']}")
-        normalized_path = entry["path"].replace("\\", "/")
-        if normalized_path in paths:
-            raise ValueError(f"duplicate database inventory path: {normalized_path}")
+        locator = entry["locator"].replace("\\", "/")
+        if locator in locators:
+            raise ValueError(f"duplicate database inventory locator: {locator}")
         ids.add(entry["id"])
-        paths.add(normalized_path)
+        locators.add(locator)
     return inventory
 
 
@@ -117,7 +120,7 @@ def resolve_database_path(project_root: Path, entry: dict[str, Any]) -> Path:
     """Resolve an inventory locator under the project root without reading it."""
     _validate_database_entry(entry)
     root = Path(project_root).resolve()
-    resolved = (root / entry["path"]).resolve()
+    resolved = (root / "src" / "data" / entry["basename"]).resolve()
     if root not in resolved.parents:
         raise ValueError("database inventory path escaped the project root")
     return resolved
@@ -133,7 +136,16 @@ def build_backup_manifest(inventory: dict[str, Any]) -> dict[str, Any]:
         "content_boundary": "Redacted database policy metadata only.",
         "classifications": sorted(CLASSIFICATIONS),
         "databases": [
-            {**entry, "key_env": entry["key_env"]}
+            {
+                "id": entry["id"],
+                "path": entry["locator"],
+                "classification": entry["classification"],
+                "backup_allowed": entry["backup_allowed"],
+                "reason": entry["reason"],
+                "discovery": {"project": inventory["project"], "basename": entry["basename"]},
+                "encryption": entry["encryption"],
+                "key_env": entry["key_env_var"],
+            }
             for entry in inventory["databases"]
         ],
         "exclusions": [],

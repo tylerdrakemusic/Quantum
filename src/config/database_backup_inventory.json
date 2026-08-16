@@ -4,11 +4,12 @@
   "databases": [
     {
       "id": "quantum-quantumpsi",
-      "path": "src/data/quantumpsi.db",
+      "locator": "quantum/application-store",
+      "basename": "quantumpsi.db",
       "classification": "canonical",
       "backup_allowed": true,
       "encryption": "sqlcipher",
-      "key_env": "QUANTUM_DB_KEY",
+      "key_env_var": "QUANTUM_DB_KEY",
       "reason": "Authoritative encrypted Quantum application database."
     }
   ]
