@@ -78,6 +78,72 @@ def test_stale_snapshot_is_explicitly_non_authoritative() -> None:
     assert "calibration snapshot is stale" in result.metadata["warnings"]
 
 
+def test_aging_snapshot_is_explicitly_non_authoritative() -> None:
+    snapshot = calibration_snapshot()
+    snapshot["last_update_date"] = "2026-08-21T08:00:00Z"
+
+    result = build_noise_model(
+        snapshot,
+        model_version="fez-aer-v1",
+        seed=1,
+        observed_at=datetime(2026, 8, 22, 8, 10, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "aging"
+    assert result.noise_model is None
+    assert any("calibration snapshot is aging" in warning for warning in result.metadata["warnings"])
+
+
+def test_future_snapshot_is_explicitly_non_authoritative() -> None:
+    snapshot = calibration_snapshot()
+    snapshot["last_update_date"] = "2026-08-22T08:11:00Z"
+
+    result = build_noise_model(
+        snapshot,
+        model_version="fez-aer-v1",
+        seed=1,
+        observed_at=datetime(2026, 8, 22, 8, 10, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "future"
+    assert result.noise_model is None
+    assert "calibration timestamp is in the future" in result.metadata["warnings"]
+
+
+def test_wrong_backend_is_explicitly_non_authoritative() -> None:
+    snapshot = calibration_snapshot()
+    snapshot["backend_name"] = "other_backend"
+
+    result = build_noise_model(snapshot, model_version="fez-aer-v1", seed=1)
+
+    assert result.status == "wrong_backend"
+    assert result.noise_model is None
+    assert any("unexpected backend_name" in warning for warning in result.metadata["warnings"])
+
+
+def test_wrong_source_is_explicitly_non_authoritative() -> None:
+    snapshot = calibration_snapshot()
+    snapshot["source"] = "other-source:v1"
+
+    result = build_noise_model(snapshot, model_version="fez-aer-v1", seed=1)
+
+    assert result.status == "wrong_source"
+    assert result.noise_model is None
+    assert any("unexpected calibration snapshot source" in warning for warning in result.metadata["warnings"])
+
+
+def test_invalid_calibration_ranges_are_reported_without_authoritative_model() -> None:
+    snapshot = calibration_snapshot()
+    snapshot["qubits"]["0"]["readout_error"] = 1.1
+    snapshot["gates"]["x"]["0"]["gate_error"] = -0.1
+
+    result = build_noise_model(snapshot, model_version="fez-aer-v1", seed=1)
+
+    assert result.status == "unmappable"
+    assert result.noise_model is None
+    assert "invalid calibration ranges" in result.metadata["warnings"]
+
+
 def test_unmappable_fields_are_reported_without_authoritative_model() -> None:
     snapshot = calibration_snapshot()
     snapshot["qubits"] = {"0": {"unknown_error": 0.4}}

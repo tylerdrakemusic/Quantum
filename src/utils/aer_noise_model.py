@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import math
+from numbers import Real
 from typing import Any, Literal
 
 from qiskit_aer.noise import (
@@ -15,10 +17,22 @@ from qiskit_aer.noise import (
     thermal_relaxation_error,
 )
 
-BuildStatus = Literal["ready", "missing", "undated", "aging", "stale", "unmappable"]
+BuildStatus = Literal[
+    "ready",
+    "missing",
+    "undated",
+    "future",
+    "aging",
+    "stale",
+    "wrong_backend",
+    "wrong_source",
+    "unmappable",
+]
 
 _UNSUPPORTED_FIELDS = ["cross_talk", "drift", "pulse_schedule"]
 _APPROXIMATION_WARNING = "Aer with an IBM-derived approximate noise model"
+_EXPECTED_BACKEND_NAME = "ibm_fez"
+_EXPECTED_SOURCE = "backend-properties-api:v1"
 
 
 @dataclass(frozen=True)
@@ -36,12 +50,26 @@ def build_noise_model(
     model_version: str,
     seed: int,
     observed_at: datetime | None = None,
+    expected_backend_name: str = _EXPECTED_BACKEND_NAME,
+    expected_source: str = _EXPECTED_SOURCE,
 ) -> NoiseModelBuildResult:
-    """Build a deterministic approximate Aer model from one calibration snapshot."""
+    """Build a deterministic approximate Aer model from one calibration snapshot.
+
+    ``seed`` is retained in provenance for caller-level reproducibility records;
+    model construction is deterministic from the snapshot and does not consume
+    the seed as a source of randomness.
+    """
     metadata = _base_metadata(snapshot, model_version, seed)
     if snapshot is None:
         metadata["warnings"] = ["calibration snapshot is missing"]
         return NoiseModelBuildResult("missing", None, metadata)
+
+    if snapshot.get("backend_name") != expected_backend_name:
+        metadata["warnings"] = ["unexpected backend_name in calibration snapshot"]
+        return NoiseModelBuildResult("wrong_backend", None, metadata)
+    if snapshot.get("source") != expected_source:
+        metadata["warnings"] = ["unexpected calibration snapshot source"]
+        return NoiseModelBuildResult("wrong_source", None, metadata)
 
     calibration_timestamp = snapshot.get("last_update_date")
     update_time = _parse_timestamp(calibration_timestamp)
@@ -51,6 +79,9 @@ def build_noise_model(
 
     now = observed_at or datetime.now(timezone.utc)
     age = now - update_time
+    if age < timedelta(0):
+        metadata["warnings"] = ["calibration timestamp is in the future"]
+        return NoiseModelBuildResult("future", None, metadata)
     if age > timedelta(days=7):
         metadata["warnings"] = ["calibration snapshot is stale"]
         return NoiseModelBuildResult("stale", None, metadata)
@@ -62,6 +93,9 @@ def build_noise_model(
     metadata["unsupported_fields"] = unsupported + _UNSUPPORTED_FIELDS
     if unsupported:
         metadata["warnings"] = ["unmappable calibration data"]
+        return NoiseModelBuildResult("unmappable", None, metadata)
+    if _has_invalid_ranges(snapshot):
+        metadata["warnings"] = ["invalid calibration ranges"]
         return NoiseModelBuildResult("unmappable", None, metadata)
 
     model = NoiseModel()
@@ -146,6 +180,48 @@ def _find_unsupported_fields(snapshot: dict[str, Any]) -> list[str]:
         for values in gate_entries.values():
             found.update(set(values) - known_gate_fields)
     return sorted(found)
+
+
+def _has_invalid_ranges(snapshot: dict[str, Any]) -> bool:
+    for values in snapshot.get("qubits", {}).values():
+        if not _valid_probability(values.get("readout_error")):
+            return True
+        if not _valid_positive(values.get("T1")) or not _valid_positive(values.get("T2")):
+            return True
+    for gate_entries in snapshot.get("gates", {}).values():
+        for values in gate_entries.values():
+            if not _valid_probability(values.get("gate_error")):
+                return True
+            if not _valid_nonnegative(values.get("gate_length")):
+                return True
+    return False
+
+
+def _valid_probability(value: object) -> bool:
+    return value is None or (
+        isinstance(value, Real)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and 0 <= value <= 1
+    )
+
+
+def _valid_positive(value: object) -> bool:
+    return value is None or (
+        isinstance(value, Real)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+    )
+
+
+def _valid_nonnegative(value: object) -> bool:
+    return value is None or (
+        isinstance(value, Real)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+    )
 
 
 def _with_deterministic_id(error: Any, kind: str, qubits: str, values: object) -> Any:
