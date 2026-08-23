@@ -70,6 +70,25 @@ def init_db() -> None:
     CREATE INDEX IF NOT EXISTS idx_benchmarks_algorithm ON benchmarks(algorithm);
     CREATE INDEX IF NOT EXISTS idx_benchmarks_backend ON benchmarks(backend);
 
+    CREATE TABLE IF NOT EXISTS shor_replay_benchmarks (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id              TEXT NOT NULL,
+        mode                TEXT NOT NULL CHECK(mode IN ('ideal', 'noisy', 'qpu')),
+        n_value             INTEGER NOT NULL,
+        repetitions         INTEGER NOT NULL,
+        successes           INTEGER NOT NULL,
+        success_rate        REAL NOT NULL,
+        ci_95_low           REAL NOT NULL,
+        ci_95_high          REAL NOT NULL,
+        seed                INTEGER,
+        order_summary_json  TEXT NOT NULL,
+        provenance_json     TEXT NOT NULL,
+        created_at          TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_shor_replay_run_mode
+        ON shor_replay_benchmarks(run_id, mode);
+
     -- QPU-specific Shor's runs (FR-20260428-shors-monthly-qpu-bench)
     CREATE TABLE IF NOT EXISTS shors_qpu_bench (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,

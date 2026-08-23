@@ -17,6 +17,48 @@ module = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(module)  # type: ignore[union-attr]
 
+
+def test_load_replay_runs_keeps_ideal_and_noisy_rows_separate(tmp_path, monkeypatch):
+    import init_db
+
+    db_path = tmp_path / "quantumpsi.db"
+    monkeypatch.setenv("QUANTUM_DB_PATH", str(db_path))
+    monkeypatch.setenv("QUANTUM_DB_KEY", "testkey")
+    monkeypatch.setattr(init_db, "DB_PATH", db_path)
+    init_db.init_db()
+    conn = init_db.get_connection()
+    conn.execute(
+        "INSERT INTO shor_replay_benchmarks VALUES "
+        "(1, 'run-1', 'ideal', 15, 100, 90, .9, .83, .94, 7, '{}', '{\"model\":\"ideal\"}', 'now'), "
+        "(2, 'run-1', 'noisy', 15, 100, 60, .6, .5, .7, 7, '{}', '{\"model\":\"noisy\"}', 'now')"
+    )
+    conn.commit()
+    conn.close()
+    rows = module._load_replay_runs()
+
+    assert [row["mode"] for row in rows] == ["ideal", "noisy"]
+    assert rows[0]["success_rate"] == pytest.approx(.9)
+    assert rows[1]["provenance"]["model"] == "noisy"
+
+
+def test_build_replay_table_labels_modes_and_confidence_interval() -> None:
+    html = module._build_replay_table([
+        {
+            "mode": "ideal", "n_value": 15, "repetitions": 100,
+            "success_rate": 0.9, "ci_95_low": 0.83, "ci_95_high": 0.94,
+            "seed": 7, "provenance": {"model": "AerSimulator"},
+        },
+        {
+            "mode": "noisy", "n_value": 15, "repetitions": 100,
+            "success_rate": 0.6, "ci_95_low": 0.5, "ci_95_high": 0.7,
+            "seed": 7, "provenance": {"model": "depolarizing"},
+        },
+    ])
+
+    assert "Ideal / Noisy Shor Replay" in html
+    assert "0.830–0.940" in html
+    assert "depolarizing" in html
+
 def test_load_cache_widget_data_sorts_sparkline_points(tmp_path, monkeypatch):
     root = tmp_path / "quantum"
     live_dir = root / "src" / "data" / "liveCache"
