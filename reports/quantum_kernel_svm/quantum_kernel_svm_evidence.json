@@ -1,0 +1,71 @@
+{
+  "class_balance": {
+    "test": {
+      "0": 3,
+      "1": 6
+    },
+    "total": {
+      "0": 18,
+      "1": 18
+    },
+    "train": {
+      "0": 15,
+      "1": 12
+    }
+  },
+  "config": {
+    "backend": "qiskit-aer",
+    "classical_comparator": "sklearn-rbf-svc",
+    "fixture_seed": 7,
+    "kernel": "statevector-fidelity",
+    "raw_data_persisted": false,
+    "row_level_outputs_persisted": false,
+    "seed": 19,
+    "test_size": 0.25
+  },
+  "counts": {
+    "episodes": 36,
+    "subjects": 12,
+    "test_episodes": 9,
+    "train_episodes": 27
+  },
+  "error_analysis": {
+    "classical_rbf_svm": {
+      "errors": 0
+    },
+    "quantum_kernel_svm": {
+      "errors": 0
+    }
+  },
+  "holdout": {
+    "strategy": "grouped-stratified-by-subject",
+    "test_subject_hashes": [
+      "49d93b4dc8aae235",
+      "4c694e6e2b18b225",
+      "a2036913890324d8"
+    ],
+    "train_subject_hashes": [
+      "04251c7df5a693a1",
+      "2b4fd0db6f0738ec",
+      "5e6b5a8716dbc2a1",
+      "71e7bcd6c46c1045",
+      "7878ddd2bd616d1b",
+      "82349fcd00dd9456",
+      "889086f2a970dd4d",
+      "c0d68b35e3791ea4",
+      "c1f8522901d8689e"
+    ]
+  },
+  "metrics": {
+    "classical_rbf_svm": {
+      "accuracy": 1.0,
+      "balanced_accuracy": 1.0,
+      "f1": 1.0
+    },
+    "quantum_kernel_svm": {
+      "accuracy": 1.0,
+      "balanced_accuracy": 1.0,
+      "f1": 1.0
+    }
+  }
+}
