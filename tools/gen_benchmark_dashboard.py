@@ -256,6 +256,38 @@ def _load_bench_runs() -> list[dict]:
         return []
 
 
+def _load_replay_runs() -> list[dict]:
+    """Load persisted ideal/noisy Shor replay summaries when available."""
+    try:
+        import init_db
+        conn = init_db.get_connection()
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='shor_replay_benchmarks'"
+        ).fetchone()
+        if not exists:
+            conn.close()
+            return []
+        rows = conn.execute(
+            "SELECT id, run_id, mode, n_value, repetitions, successes, success_rate, "
+            "ci_95_low, ci_95_high, seed, order_summary_json, provenance_json, created_at "
+            "FROM shor_replay_benchmarks ORDER BY id"
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "id": row[0], "run_id": row[1], "mode": row[2], "n_value": row[3],
+                "repetitions": row[4], "successes": row[5], "success_rate": row[6],
+                "ci_95_low": row[7], "ci_95_high": row[8], "seed": row[9],
+                "order_summary": json.loads(row[10] or "{}"),
+                "provenance": json.loads(row[11] or "{}"), "created_at": row[12] or "",
+            }
+            for row in rows
+        ]
+    except Exception as exc:
+        print(f"[WARN] Could not load shor_replay_benchmarks: {exc}")
+        return []
+
+
 def _load_policy_events(policy_id: str = "shors_monthly_benchmark", limit: int = 20) -> list[dict]:
     """Load benchmark policy observability events for a given policy_id."""
     try:
@@ -330,6 +362,35 @@ def _load_schedule_policy(policy_id: str = "shors_monthly_benchmark") -> dict:
             "qpu_cap": 300,
             "missing": True,
         }
+
+
+def _build_replay_table(replay_runs: list[dict]) -> str:
+    """Render offline ideal/noisy replay summaries separately from QPU rows."""
+    if not replay_runs:
+        return "<p class='empty'>No ideal/noisy replay data.</p>"
+    lines = [
+        "<h2 class='sim-heading'>Ideal / Noisy Shor Replay</h2>",
+        "<table class='bench-table'><thead><tr><th>Mode</th><th>N</th><th>Repetitions</th>"
+        "<th>Success rate</th><th>95% Wilson CI</th><th>Seed</th><th>Model / calibration</th>"
+        "</tr></thead><tbody>",
+    ]
+    for row in replay_runs:
+        provenance = ", ".join(f"{key}={value}" for key, value in row.get("provenance", {}).items())
+        lines.append(
+            "<tr><td>{mode}</td><td>{n_value}</td><td>{repetitions}</td>"
+            "<td>{success_rate:.3f}</td><td>{low:.3f}–{high:.3f}</td><td>{seed}</td><td>{provenance}</td></tr>".format(
+                mode=_esc(str(row.get("mode", ""))),
+                n_value=_esc(str(row.get("n_value", ""))),
+                repetitions=_esc(str(row.get("repetitions", ""))),
+                success_rate=float(row.get("success_rate", 0.0)),
+                low=float(row.get("ci_95_low", 0.0)),
+                high=float(row.get("ci_95_high", 0.0)),
+                seed=_esc(str(row.get("seed", ""))),
+                provenance=_esc(provenance),
+            )
+        )
+    lines.append("</tbody></table>")
+    return "".join(lines)
 
 
 def _next_run_iso(day: int, hour: int, minute: int) -> str:
@@ -1052,8 +1113,10 @@ def generate_html(
     policy_events: list[dict],
     schedule_policy: dict,
     vqe_runs: list[dict] | None = None,
+    replay_runs: list[dict] | None = None,
 ) -> str:
     vqe_runs = vqe_runs or []
+    replay_runs = replay_runs or []
     last_qpu = qpu_runs[0] if qpu_runs else None
     last_bench = bench_runs[0] if bench_runs else None
     last_ts = (last_qpu["run_date"] if last_qpu else
@@ -1181,6 +1244,8 @@ def generate_html(
 <h2 class="vqe-heading">🧪 VQE — Molecular Simulation (Aer)</h2>
 {_build_vqe_table(vqe_runs)}
 
+{_build_replay_table(replay_runs)}
+
 <h2 class="qpu-heading">🔬 QPU Runs — Real IBM Quantum Hardware</h2>
 {_build_qpu_table(qpu_runs)}
 
@@ -1292,6 +1357,7 @@ def _regen_dashboard() -> str:
     qpu_runs = _load_qpu_runs()
     bench_runs = _load_bench_runs()
     vqe_runs = _load_vqe_runs()
+    replay_runs = _load_replay_runs()
     shors_events = _load_policy_events("shors_monthly_benchmark")
     shors_schedule = _load_schedule_policy("shors_monthly_benchmark")
     trend = _monthly_trend(qpu_runs)
@@ -1299,6 +1365,7 @@ def _regen_dashboard() -> str:
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     html_content = generate_html(
         qpu_runs, bench_runs, trend, generated_at, shors_events, shors_schedule, vqe_runs,
+        replay_runs,
     )
     OUT_PATH.write_text(html_content, encoding="utf-8")
     return html_content
