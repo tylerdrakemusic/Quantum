@@ -14,6 +14,8 @@ investment, production, quantum-advantage, or real-world performance claim.
   "classical_comparator": "sklearn-rbf-svc",
   "fixture_seed": 7,
   "kernel": "statevector-fidelity",
+  "provenance_digest": "sha256(subject_id + per-run random salt)",
+  "provenance_salt_persisted": false,
   "raw_data_persisted": false,
   "row_level_outputs_persisted": false,
   "seed": 19,
@@ -24,7 +26,7 @@ investment, production, quantum-advantage, or real-world performance claim.
 ## Evidence summary
 
 - Subjects: 12; episodes: 36.
-- Holdout: grouped and stratified by subject; subject identifiers are stored only as truncated SHA-256 hashes.
+- Holdout: grouped and stratified by subject; persisted identifiers are full salted digests that are not linkable or reversible.
 - Class balance: {"test": {"0": 3, "1": 6}, "total": {"0": 18, "1": 18}, "train": {"0": 15, "1": 12}}.
 - Quantum Kernel SVM metrics: {"accuracy": 1.0, "balanced_accuracy": 1.0, "f1": 1.0}.
 - Classical RBF SVM metrics: {"accuracy": 1.0, "balanced_accuracy": 1.0, "f1": 1.0}.
@@ -35,8 +37,10 @@ investment, production, quantum-advantage, or real-world performance claim.
 The prototype rejects overlapping subject groups and episode identifiers
 between train and test. Raw fixtures, row-level outputs, and model outputs
 remain in memory only. Persisted evidence contains counts, configuration,
-aggregate metrics, aggregate error counts, and non-reversible subject hashes.
-No database schema or database reader is used.
+aggregate metrics, aggregate error counts, and per-run salted subject digests.
+The random salt exists only in memory, so the digests are not linkable across
+runs or reversible into subject identifiers. No database schema or database
+reader is used.
 
 ## Limitations and next handoff
 

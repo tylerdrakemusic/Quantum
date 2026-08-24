@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,43 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+
+
+class ApprovalDeniedError(ValueError):
+    """Raised when the governed execution contract is not satisfied."""
+
+
+_REQUIRED_MANIFEST = frozenset(
+    {"schema_version", "fr_id", "approval_id", "purpose", "approved"}
+)
+_EXPECTED_FR_ID = "FR-20260824-quantum-kernel-svm"
+_EXPECTED_PURPOSE = "episode_binary_label_handoff"
+
+
+def validate_approval_manifest(
+    approval_manifest: dict[str, object] | None,
+    *,
+    cli_approved: bool = False,
+    synthetic_only: bool = True,
+) -> None:
+    """Validate the versioned, synthetic-only execution approval contract."""
+    if approval_manifest is None or cli_approved is not True:
+        raise ApprovalDeniedError("future manifest and explicit CLI approval are required")
+    if not synthetic_only:
+        raise ApprovalDeniedError("only synthetic-only execution is permitted")
+    if set(approval_manifest) != _REQUIRED_MANIFEST:
+        raise ApprovalDeniedError("approval manifest must match the versioned contract")
+    if approval_manifest.get("schema_version") != "v1":
+        raise ApprovalDeniedError("unsupported approval manifest version")
+    if approval_manifest.get("fr_id") != _EXPECTED_FR_ID:
+        raise ApprovalDeniedError("approval manifest FR does not match this handoff")
+    approval_id = approval_manifest.get("approval_id")
+    if not isinstance(approval_id, str) or not approval_id.startswith("synthetic-"):
+        raise ApprovalDeniedError("approval must use a synthetic approval identity")
+    if approval_manifest.get("purpose") != _EXPECTED_PURPOSE:
+        raise ApprovalDeniedError("approval manifest purpose is not permitted")
+    if approval_manifest.get("approved") is not True:
+        raise ApprovalDeniedError("approval manifest is not approved")
 
 
 @dataclass(frozen=True)
@@ -71,8 +109,8 @@ def validate_no_leakage(
         raise ValueError("subject leakage: train and test subjects overlap")
 
 
-def _subject_hash(subject_id: str) -> str:
-    return hashlib.sha256(subject_id.encode("utf-8")).hexdigest()[:16]
+def _subject_digest(subject_id: str, salt: bytes) -> str:
+    return hashlib.sha256(salt + subject_id.encode("utf-8")).hexdigest()
 
 
 def _aer_statevector(features: np.ndarray) -> np.ndarray:
@@ -140,6 +178,7 @@ def run_feasibility_prototype(
         "train": {str(label): int(sum(episode.label == label for episode in train)) for label in (0, 1)},
         "test": {str(label): int(sum(episode.label == label for episode in test)) for label in (0, 1)},
     }
+    provenance_salt = secrets.token_bytes(32)
     aggregate = {
         "config": {
             "backend": "qiskit-aer",
@@ -150,12 +189,14 @@ def run_feasibility_prototype(
             "fixture_seed": None,
             "raw_data_persisted": False,
             "row_level_outputs_persisted": False,
+            "provenance_digest": "sha256(subject_id + per-run random salt)",
+            "provenance_salt_persisted": False,
         },
         "counts": {"subjects": len(subjects), "episodes": len(episodes), "train_episodes": len(train), "test_episodes": len(test)},
         "holdout": {
             "strategy": "grouped-stratified-by-subject",
-            "train_subject_hashes": sorted(_subject_hash(subject) for subject in train_subjects),
-            "test_subject_hashes": sorted(_subject_hash(subject) for subject in test_subjects),
+            "train_subject_digests": sorted(_subject_digest(subject, provenance_salt) for subject in train_subjects),
+            "test_subject_digests": sorted(_subject_digest(subject, provenance_salt) for subject in test_subjects),
         },
         "class_balance": class_balance,
         "metrics": {"quantum_kernel_svm": _metrics(test_labels, quantum_labels), "classical_rbf_svm": _metrics(test_labels, classical_labels)},

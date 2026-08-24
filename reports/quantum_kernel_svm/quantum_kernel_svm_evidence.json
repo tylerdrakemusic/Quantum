@@ -18,6 +18,8 @@
     "classical_comparator": "sklearn-rbf-svc",
     "fixture_seed": 7,
     "kernel": "statevector-fidelity",
+    "provenance_digest": "sha256(subject_id + per-run random salt)",
+    "provenance_salt_persisted": false,
     "raw_data_persisted": false,
     "row_level_outputs_persisted": false,
     "seed": 19,
@@ -39,21 +41,21 @@
   },
   "holdout": {
     "strategy": "grouped-stratified-by-subject",
-    "test_subject_hashes": [
-      "49d93b4dc8aae235",
-      "4c694e6e2b18b225",
-      "a2036913890324d8"
+    "test_subject_digests": [
+      "3664afd8e912c7f277bfa422e5562a10e3cadff336e4128bfd0291849277fbad",
+      "82275bb47dd396ea62ade78f19babc223898e3489bf63c1bc8da7de7d54946dd",
+      "ea9c595e8f526b537ea679e7edffa20dfd9334fecfcc1d4f9be1087da8fe46c9"
     ],
-    "train_subject_hashes": [
-      "04251c7df5a693a1",
-      "2b4fd0db6f0738ec",
-      "5e6b5a8716dbc2a1",
-      "71e7bcd6c46c1045",
-      "7878ddd2bd616d1b",
-      "82349fcd00dd9456",
-      "889086f2a970dd4d",
-      "c0d68b35e3791ea4",
-      "c1f8522901d8689e"
+    "train_subject_digests": [
+      "135a0cba21b3483ffe89e85ab9a9a914fb3c2c42681c8904a03415129d0d7ba8",
+      "228dcdd67a9481b9a2e3a8d63cc53f587e7888ceee7ce2805be745516697a519",
+      "307b2aa41c5a144b2d22a40f0cafe9527cc78a2a78497d17d38fe2142aa84bfd",
+      "3864a65c99472d0fd6417c016c34d6c3a5a80c5fde2a9f2e57cfd935fb8d2ad6",
+      "51700981cd197b1d102ee315fc90f4e725c200ed36da738cbb1bbf2da51de863",
+      "5e79c06c68cef18dd5f213293fafdb4145935f85c4faab28fad1749158039160",
+      "8778ac840aa705feeb69754e7d929485d385d8cff56c8b31ae70c7c745e6325d",
+      "c1fa9c4cbb2b37c6336e82711d6ccb664ab42249e3b7d209d0310f9f3eb7f19f",
+      "fd99de90eeaa808d187a543f21069c0ea41f752f488a331e32a4331b35a374c4"
     ]
   },
   "metrics": {
