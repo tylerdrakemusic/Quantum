@@ -13,6 +13,7 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src" / "utils"))
 
 import init_db  # noqa: E402
 import run_vqe_bench as rvb  # noqa: E402
+import execution_policy  # noqa: E402
 
 
 @pytest.fixture
@@ -67,6 +68,11 @@ def test_log_policy_event_writes_policy_events_row(monkeypatch: pytest.MonkeyPat
     assert row["policy_id"] == "vqe_monthly_benchmark"
     assert row["event_type"] == "run_started"
     assert row["status"] == "started"
+
+
+def test_shared_qpu_budget_is_loaded_from_execution_policy() -> None:
+    """The shared IBM free-tier budget must come from execution policy config."""
+    assert execution_policy.policy_shared_qpu_budget_seconds() == 600
 
 
 def test_wall_clock_guard_aborts_remaining_molecules(monkeypatch: pytest.MonkeyPatch, quantum_db_env) -> None:

@@ -45,6 +45,16 @@ def policy_qpu_cap_seconds(policy_id: str, default: int) -> int:
         return default
 
 
+def policy_shared_qpu_budget_seconds(default: int = 600) -> int:
+    """Return the shared monthly IBM QPU budget from execution policy config."""
+    try:
+        config = load_policy_config()
+        budget = int(config.get("shared_qpu_budget_seconds", default))
+        return budget if budget > 0 else default
+    except (PolicyConfigError, TypeError, ValueError):
+        return default
+
+
 def next_run_utc(policy_id: str, now_utc: datetime | None = None) -> datetime:
     """Compute next monthly run timestamp in UTC for a policy id."""
     schedule = policy_schedule(policy_id)

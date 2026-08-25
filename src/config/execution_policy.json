@@ -53,5 +53,6 @@
     "QuantumCacheDepletionGuard_Daily": 30,
     "PolicyComplianceAudit_Daily": 30,
     "QuantumBackendAvailabilityMonitor_Daily": 30
-  }
+  },
+  "shared_qpu_budget_seconds": 600
 }

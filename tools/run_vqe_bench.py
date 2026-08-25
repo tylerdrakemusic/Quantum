@@ -40,11 +40,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # ── Constants ──────────────────────────────────────────────────────────────
 POLICY_ID = "vqe_monthly_benchmark"
 OTHER_MONTHLY_POLICIES = ("quantum_cache_fill_monthly", "shors_monthly_benchmark")
-SHARED_MONTHLY_BUDGET_SECONDS = 600
 
 import execution_policy  # noqa: E402
 
 MAX_QPU_SECONDS: int = execution_policy.policy_qpu_cap_seconds(POLICY_ID, 600)
+SHARED_MONTHLY_BUDGET_SECONDS: int = execution_policy.policy_shared_qpu_budget_seconds()
 
 from bench_vqe import run_vqe as _bench_vqe_run_vqe  # noqa: E402
 
