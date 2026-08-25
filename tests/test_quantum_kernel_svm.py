@@ -13,7 +13,9 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from quantum_kernel_svm import (  # noqa: E402
     EpisodeFixture,
+    RealDataContractError,
     build_synthetic_episodes,
+    evaluate_real_data_episode_contract,
     run_feasibility_prototype,
     validate_approval_manifest,
     validate_no_leakage,
@@ -96,3 +98,74 @@ def test_persisted_evidence_contains_aggregates_but_no_rows_or_predictions(tmp_p
     assert "prediction" not in evidence.lower()
     assert "metrics" in evidence
     assert "config" in evidence
+
+
+def test_real_data_episode_contract_defers_execution_until_sufficiency_is_proven() -> None:
+    decision = evaluate_real_data_episode_contract(
+        {
+            "schema_version": "v1",
+            "episode_kind": "weight_trend",
+            "subject_count": 3,
+            "episode_count": 5,
+            "min_episodes_per_subject": 1,
+            "class_counts": {"0": 4, "1": 1},
+            "feature_count": 3,
+            "complete": True,
+            "nutrition_included": False,
+        }
+    )
+
+    assert decision.sufficiency_proven is False
+    assert decision.model_execution_permitted is False
+    assert decision.status == "deferred_until_sufficient"
+    assert "subject_count" in decision.reasons
+
+
+def test_real_data_episode_contract_accepts_only_aggregate_handoff() -> None:
+    decision = evaluate_real_data_episode_contract(
+        {
+            "schema_version": "v1",
+            "episode_kind": "weight_trend",
+            "subject_count": 12,
+            "episode_count": 36,
+            "min_episodes_per_subject": 3,
+            "class_counts": {"0": 18, "1": 18},
+            "feature_count": 3,
+            "complete": True,
+            "nutrition_included": False,
+        }
+    )
+
+    assert decision.sufficiency_proven is True
+    assert decision.model_execution_permitted is False
+    assert decision.status == "sufficient_for_future_model_review"
+    assert decision.handoff == {
+        "schema_version": "v1",
+        "episode_kind": "weight_trend",
+        "subject_count": 12,
+        "episode_count": 36,
+        "min_episodes_per_subject": 3,
+        "class_counts": {"0": 18, "1": 18},
+        "feature_count": 3,
+        "complete": True,
+        "nutrition_included": False,
+    }
+
+
+def test_real_data_episode_contract_rejects_rows_identifiers_predictions_and_nutrition() -> None:
+    with pytest.raises(RealDataContractError, match="forbidden field"):
+        evaluate_real_data_episode_contract(
+            {
+                "schema_version": "v1",
+                "episode_kind": "weight_trend",
+                "subject_count": 12,
+                "episode_count": 36,
+                "min_episodes_per_subject": 3,
+                "class_counts": {"0": 18, "1": 18},
+                "feature_count": 3,
+                "complete": True,
+                "nutrition_included": True,
+                "rows": [{"subject_id": "real-person"}],
+                "predictions": [0],
+            }
+        )
