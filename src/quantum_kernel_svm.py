@@ -6,7 +6,7 @@ import json
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
@@ -17,6 +17,104 @@ from sklearn.svm import SVC
 
 class ApprovalDeniedError(ValueError):
     """Raised when the governed execution contract is not satisfied."""
+
+
+class RealDataContractError(ValueError):
+    """Raised when a real-data handoff is not aggregate-only and governed."""
+
+
+@dataclass(frozen=True)
+class RealDataEpisodeDecision:
+    """Aggregate sufficiency decision; it contains no row-level data."""
+
+    status: str
+    sufficiency_proven: bool
+    model_execution_permitted: bool
+    reasons: tuple[str, ...]
+    handoff: dict[str, object]
+
+
+_REAL_DATA_FIELDS = frozenset(
+    {
+        "schema_version",
+        "episode_kind",
+        "subject_count",
+        "episode_count",
+        "min_episodes_per_subject",
+        "class_counts",
+        "feature_count",
+        "complete",
+        "nutrition_included",
+    }
+)
+_FORBIDDEN_REAL_DATA_FIELDS = frozenset(
+    {
+        "rows",
+        "raw_data",
+        "features",
+        "labels",
+        "predictions",
+        "identifiers",
+        "subject_ids",
+        "episode_ids",
+    }
+)
+
+
+def evaluate_real_data_episode_contract(
+    contract: Mapping[str, object],
+) -> RealDataEpisodeDecision:
+    """Evaluate aggregate handoff sufficiency without accepting real data rows."""
+    if not isinstance(contract, Mapping):
+        raise RealDataContractError("real-data contract must be an aggregate mapping")
+    forbidden = sorted(set(contract) & _FORBIDDEN_REAL_DATA_FIELDS)
+    if forbidden:
+        raise RealDataContractError(f"forbidden field in real-data contract: {forbidden[0]}")
+    unknown = sorted(set(contract) - _REAL_DATA_FIELDS)
+    if unknown:
+        raise RealDataContractError(f"forbidden field in real-data contract: {unknown[0]}")
+    required = _REAL_DATA_FIELDS - {"nutrition_included"}
+    missing = sorted(required - set(contract))
+    if missing:
+        raise RealDataContractError(f"missing aggregate field: {missing[0]}")
+
+    handoff = {field: contract[field] for field in _REAL_DATA_FIELDS if field in contract}
+    if handoff["nutrition_included"] is not False:
+        raise RealDataContractError("nutrition logging is excluded from this contract")
+
+    reasons: list[str] = []
+    if handoff["schema_version"] != "v1":
+        reasons.append("schema_version")
+    if handoff["episode_kind"] != "weight_trend":
+        reasons.append("episode_kind")
+    if not isinstance(handoff["subject_count"], int) or handoff["subject_count"] < 8:
+        reasons.append("subject_count")
+    if not isinstance(handoff["episode_count"], int) or handoff["episode_count"] < 16:
+        reasons.append("episode_count")
+    if not isinstance(handoff["min_episodes_per_subject"], int) or handoff["min_episodes_per_subject"] < 2:
+        reasons.append("min_episodes_per_subject")
+    class_counts = handoff["class_counts"]
+    if (
+        not isinstance(class_counts, Mapping)
+        or set(class_counts) != {"0", "1"}
+        or any(not isinstance(value, int) or value < 1 for value in class_counts.values())
+    ):
+        reasons.append("class_counts")
+    if not isinstance(handoff["feature_count"], int) or handoff["feature_count"] < 1:
+        reasons.append("feature_count")
+    if handoff["complete"] is not True:
+        reasons.append("complete")
+
+    handoff["class_counts"] = dict(class_counts) if isinstance(class_counts, Mapping) else class_counts
+
+    sufficient = not reasons
+    return RealDataEpisodeDecision(
+        status=("sufficient_for_future_model_review" if sufficient else "deferred_until_sufficient"),
+        sufficiency_proven=sufficient,
+        model_execution_permitted=False,
+        reasons=tuple(reasons),
+        handoff=handoff,
+    )
 
 
 _REQUIRED_MANIFEST = frozenset(
