@@ -96,6 +96,93 @@ def test_persist_cache_fill_appends_to_live_cache_and_writes_backup(tmp_path, mo
     assert len(backups) == 1
 
 
+def test_main_starts_one_elapsed_timer_and_records_success_duration(monkeypatch):
+    events: list[dict[str, str]] = []
+    monotonic_values = iter([10.0, 12.5])
+    monotonic_calls: list[None] = []
+
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: type("Args", (), {"status": False, "dry_run": False, "max_qpu_seconds": 5})(),
+    )
+
+    def _monotonic() -> float:
+        monotonic_calls.append(None)
+        return next(monotonic_values)
+
+    monkeypatch.setattr(module.time, "monotonic", _monotonic)
+    monkeypatch.setattr(module, "run_fill", lambda max_qpu_seconds, dry_run: 8)
+    monkeypatch.setattr(
+        module,
+        "_log_policy_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        module.main()
+
+    assert exit_info.value.code == 0
+    completed = events[-1]
+    assert completed["event_type"] == "run_completed"
+    assert completed["status"] == "succeeded"
+    assert "elapsed_seconds=2.500" in completed["detail"]
+    assert len(monotonic_calls) == 2
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_status"),
+    [
+        pytest.param("dry-run", "skipped", id="dry-run"),
+        pytest.param("zero-bits", "failed", id="zero-bits"),
+        pytest.param("interruption", "deferred", id="interruption"),
+        pytest.param("failure", "failed", id="exception"),
+    ],
+)
+def test_main_records_non_negative_elapsed_duration_for_completion_outcomes(
+    monkeypatch, outcome, expected_status,
+):
+    events: list[dict[str, str]] = []
+    monotonic_values = iter([10.0, 9.0])
+    monotonic_calls: list[None] = []
+
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: type(
+            "Args",
+            (),
+            {"status": False, "dry_run": outcome == "dry-run", "max_qpu_seconds": 5},
+        )(),
+    )
+
+    def _monotonic() -> float:
+        monotonic_calls.append(None)
+        return next(monotonic_values)
+
+    monkeypatch.setattr(module.time, "monotonic", _monotonic)
+    monkeypatch.setattr(module, "_log_policy_event", lambda **kwargs: events.append(kwargs))
+
+    def _run_fill(max_qpu_seconds, dry_run):
+        if outcome == "interruption":
+            raise KeyboardInterrupt
+        if outcome == "failure":
+            raise RuntimeError("simulated failure")
+        return 0
+
+    monkeypatch.setattr(module, "run_fill", _run_fill)
+
+    with pytest.raises(SystemExit) as exit_info:
+        module.main()
+
+    assert exit_info.value.code == (1 if outcome in {"interruption", "failure"} else 0)
+    completed = events[-1]
+    assert completed["event_type"] == "run_completed"
+    assert completed["status"] == expected_status
+    assert "elapsed_seconds=0.000" in completed["detail"]
+    assert len(monotonic_calls) == 2
+
+
 def test_run_fill_wired_through_retry_supervisor_records_ibm_job_status(
     monkeypatch, quantum_db_env, tmp_path,
 ):

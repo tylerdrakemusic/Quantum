@@ -191,6 +191,12 @@ def _log_policy_event(event_type: str, status: str, detail: str) -> None:
     conn.close()
 
 
+def _with_elapsed_duration(detail: str, timer_start: float) -> str:
+    """Append non-negative wall-clock duration to a policy-event detail."""
+    elapsed_seconds = max(time.monotonic() - timer_start, 0.0)
+    return f"{detail} elapsed_seconds={elapsed_seconds:.3f}"
+
+
 # ---------------------------------------------------------------------------
 # Status helper
 # ---------------------------------------------------------------------------
@@ -457,6 +463,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    timer_start = time.monotonic()
 
     if args.status:
         _print_status()
@@ -480,20 +487,29 @@ def main() -> None:
             _log_policy_event(
                 event_type="run_completed",
                 status="skipped",
-                detail="Dry-run executed; no IBM submissions and no cache update.",
+                detail=_with_elapsed_duration(
+                    "Dry-run executed; no IBM submissions and no cache update.",
+                    timer_start,
+                ),
             )
         elif bits > 0:
             _logger.info("Cache fill successful. Run with --status to verify.")
             _log_policy_event(
                 event_type="run_completed",
                 status="succeeded",
-                detail=f"Cache fill completed with {bits} bits collected.",
+                detail=_with_elapsed_duration(
+                    f"Cache fill completed with {bits} bits collected.",
+                    timer_start,
+                ),
             )
         else:
             _log_policy_event(
                 event_type="run_completed",
                 status="failed",
-                detail="Cache fill completed with zero bits; cache not updated.",
+                detail=_with_elapsed_duration(
+                    "Cache fill completed with zero bits; cache not updated.",
+                    timer_start,
+                ),
             )
         sys.exit(0)
     except KeyboardInterrupt:
@@ -501,7 +517,7 @@ def main() -> None:
         _log_policy_event(
             event_type="run_completed",
             status="deferred",
-            detail="Cache fill interrupted by user.",
+            detail=_with_elapsed_duration("Cache fill interrupted by user.", timer_start),
         )
         sys.exit(1)
     except Exception as exc:  # noqa: BLE001
@@ -509,7 +525,7 @@ def main() -> None:
         _log_policy_event(
             event_type="run_completed",
             status="failed",
-            detail=f"Cache fill failed: {exc}",
+            detail=_with_elapsed_duration(f"Cache fill failed: {exc}", timer_start),
         )
         sys.exit(1)
 
