@@ -48,6 +48,13 @@ def get_connection() -> sqlcipher3.Connection:
 def init_db() -> None:
     """Create all tables if they do not exist."""
     conn = get_connection()
+    try:
+        _initialize_schema(conn)
+    finally:
+        conn.close()
+
+
+def _initialize_schema(conn: sqlcipher3.Connection) -> None:
     cur = conn.cursor()
 
     cur.executescript("""
@@ -193,7 +200,6 @@ def init_db() -> None:
     """)
 
     conn.commit()
-    conn.close()
 
 
 if __name__ == "__main__":

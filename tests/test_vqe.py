@@ -45,6 +45,7 @@ def test_h2_chemical_accuracy(bench_vqe_module, tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.ci_long_running
 def test_lih_chemical_accuracy(bench_vqe_module, monkeypatch) -> None:
     """LiH ground state via VQE within ±1.6e-3 Ha of -7.882 Ha. Slow (~15min)."""
     monkeypatch.setattr(bench_vqe_module, "init_db", lambda: None)
