@@ -33,6 +33,7 @@ def test_canonical_ci_bounds_exactly_the_lih_test_with_reason_and_count() -> Non
     assert "ci_long_running" in vqe_tests
     assert "tests/test_vqe.py::test_lih_chemical_accuracy" in workflow
     assert "expected_count=1" in workflow
+    assert "--collect-only -qq -m ci_long_running" in workflow
     assert "CI bounded exclusion count:" in workflow
     assert "LiH" in workflow
     assert "15 min" in workflow
