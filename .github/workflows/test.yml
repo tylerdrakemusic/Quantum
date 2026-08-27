@@ -25,7 +25,19 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest
 
+      - name: Report bounded long-running tests
+        shell: bash
+        run: |
+          expected='tests/test_vqe.py::test_lih_chemical_accuracy'
+          expected_count=1
+          selected="$(pytest --collect-only -qq -m ci_long_running | grep -E '^tests/.+::' || true)"
+          count="$(printf '%s\n' "$selected" | sed '/^$/d' | wc -l | tr -d ' ')"
+          echo "CI bounded exclusion count: $count (expected: $expected_count)"
+          echo "CI bounded exclusion reason: LiH VQE is a local Aer/SLSQP optimization that takes approximately 15 min on the CI runner; it is intentionally bounded out of canonical CI while remaining runnable and marked slow."
+          test "$count" -eq "$expected_count"
+          test "$selected" = "$expected"
+
       - name: Run pytest
         env:
           PLAYWRIGHT_ENABLED: "0"  # Set to "1" locally to run Playwright tests (FR-20260513-playwright-ui-gate)
-        run: pytest -v --tb=short
+        run: pytest -v --tb=short -rs -m "not ci_long_running"

@@ -36,6 +36,7 @@ _requires_workspace = pytest.mark.skipif(
     not _WORKSPACE_TOOLS.exists() or bool(os.environ.get("CI")),
     reason="⊕Workspace files not available in CI environment",
 )
+pytestmark = pytest.mark.ci_unavailable
 
 
 # ---------------------------------------------------------------------------
