@@ -41,6 +41,18 @@ def test_canonical_ci_bounds_exactly_the_lih_test_with_reason_and_count() -> Non
     assert "continue-on-error" not in workflow
 
 
+def test_qiskit_eve_qber_uses_stable_small_sample_average() -> None:
+    qkd_tests = (PROJECT_ROOT / "tests" / "test_qkd_bb84.py").read_text(
+        encoding="utf-8"
+    )
+    qiskit_test = qkd_tests.split(
+        "    def test_qiskit_eve_qber_above_threshold", 1
+    )[1].split("\n\n", 1)[0]
+
+    assert "for _ in range(10):" in qiskit_test
+    assert "assert avg_qber >= 0.15" in qiskit_test
+
+
 def test_workspace_dependent_tests_are_explicitly_classified() -> None:
     pytest_config = (PROJECT_ROOT / "pytest.ini").read_text(encoding="utf-8")
     portal_tests = (PROJECT_ROOT / "tests" / "test_bfx_orion_portal_server.py").read_text(
