@@ -1,0 +1,6 @@
+{
+  "parallel_ci": false,
+  "parallel_supported": true,
+  "excluded_markers": ["ci_long_running"],
+  "serial_reason": "Quantum simulators and long-running optimization tests may share process resources; CI remains serial pending evidence."
+}

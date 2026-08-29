@@ -40,4 +40,11 @@ jobs:
       - name: Run pytest
         env:
           PLAYWRIGHT_ENABLED: "0"  # Set to "1" locally to run Playwright tests (FR-20260513-playwright-ui-gate)
-        run: pytest -v --tb=short -rs -m "not ci_long_running"
+        run: pytest -v --tb=short -rs -m "not ci_long_running" --junitxml=tmp/pytest-junit.xml
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-junit
+          path: tmp/pytest-junit.xml

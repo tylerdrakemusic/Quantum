@@ -24,3 +24,4 @@ scikit-learn
 
 # Quantum Walk Music (FR-20260518-quantum-walk-music)
 midiutil
+pytest-xdist>=3.6,<4.0
