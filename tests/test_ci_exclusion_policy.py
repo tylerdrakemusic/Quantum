@@ -21,7 +21,7 @@ def test_canonical_ci_command_reports_skip_reasons() -> None:
         encoding="utf-8"
     )
 
-    assert "run: pytest -v --tb=short -rs" in workflow
+    assert 'run: pytest -v --tb=short -rs -m "not ci_long_running" --junitxml=tmp/pytest-junit.xml' in workflow
 
 
 def test_canonical_ci_bounds_exactly_the_lih_test_with_reason_and_count() -> None:
@@ -37,7 +37,7 @@ def test_canonical_ci_bounds_exactly_the_lih_test_with_reason_and_count() -> Non
     assert "CI bounded exclusion count:" in workflow
     assert "LiH" in workflow
     assert "15 min" in workflow
-    assert 'run: pytest -v --tb=short -rs -m "not ci_long_running"' in workflow
+    assert 'run: pytest -v --tb=short -rs -m "not ci_long_running" --junitxml=tmp/pytest-junit.xml' in workflow
     assert "continue-on-error" not in workflow
 
 
