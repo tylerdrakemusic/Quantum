@@ -78,3 +78,13 @@ def test_record_backend_health(tmp_path):
         assert row[2] == 12.3
         assert row[3] == ""
         conn.close()
+
+
+def test_connection_uses_runtime_database_path_override(tmp_path):
+    db_path = tmp_path / "runtime.db"
+    with patch.dict("os.environ", {"QUANTUM_DB_PATH": str(db_path), "QUANTUM_DB_KEY": "testkey"}, clear=False):
+        conn = monitor.init_db.get_connection()
+        try:
+            assert Path(conn.execute("PRAGMA database_list").fetchone()[2]) == db_path
+        finally:
+            conn.close()

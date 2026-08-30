@@ -32,8 +32,9 @@ def get_connection() -> sqlcipher3.Connection:
     key = os.environ.get("QUANTUM_DB_KEY", "")
     if not key:
         raise RuntimeError("QUANTUM_DB_KEY not set")
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlcipher3.connect(str(DB_PATH))
+    db_path = Path(os.environ.get("QUANTUM_DB_PATH", str(DB_PATH)))
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlcipher3.connect(str(db_path))
     key_hex = key.encode().hex()
     conn.execute(f"PRAGMA key=\"x'{key_hex}'\"")  # nosec B608 — SQLCipher key init, key from env var not user input
     conn.execute("PRAGMA cipher_page_size=4096")

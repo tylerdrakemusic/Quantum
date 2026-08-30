@@ -27,6 +27,14 @@ def _policy_exclusions(repo_root: Path) -> list[str]:
     return policy.get("excluded_markers", [])
 
 
+def _policy_worker_count(repo_root: Path) -> int:
+    with (repo_root / "tools" / "parallel_test_policy.json").open(encoding="utf-8") as policy_file:
+        worker_count = json.load(policy_file).get("worker_count")
+    if not isinstance(worker_count, int) or worker_count < 1:
+        raise ValueError("parallel_test_policy.json must declare a positive worker_count")
+    return worker_count
+
+
 def _combined_marker_expression(repo_root: Path) -> str:
     configured = _marker_expression(repo_root)
     exclusions = [f"not {marker}" for marker in _policy_exclusions(repo_root)]
@@ -42,7 +50,7 @@ def build_command(*, parallel: bool, junitxml: Path | None, repo_root: Path | No
     command = [sys.executable, "-m", "pytest", "--quiet", "--tb=short", "-rs"]
     command.extend(["-m", _combined_marker_expression(repo_root)])
     if parallel:
-        command.extend(["-n", "auto"])
+        command.extend(["-n", str(_policy_worker_count(repo_root))])
     if junitxml is not None:
         command.append(f"--junitxml={junitxml}")
     return command

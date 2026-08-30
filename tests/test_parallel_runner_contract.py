@@ -50,6 +50,15 @@ def test_build_command_composes_policy_exclusions_with_repository_marker_default
     assert parallel_expression == marker_expression
 
 
+def test_parallel_command_uses_policy_declared_bounded_worker_count():
+    root = Path(__file__).parents[1]
+    policy = json.loads((root / "tools" / "parallel_test_policy.json").read_text(encoding="utf-8"))
+    parallel_command = load_runner().build_command(parallel=True, junitxml=None)
+
+    assert policy["worker_count"] > 0
+    assert parallel_command[parallel_command.index("-n") + 1] == str(policy["worker_count"])
+
+
 def test_main_propagates_worker_failure(monkeypatch):
     runner = load_runner()
     completed = type("Completed", (), {"returncode": 17})()

@@ -1,6 +1,7 @@
 {
   "parallel_ci": true,
   "parallel_supported": true,
+  "worker_count": 2,
   "excluded_markers": ["ci_long_running"],
   "serial_reason": "Serial execution is an evaluation and local fallback lane; canonical CI uses bounded pytest-xdist parallelism after parallel safety was proven."
 }
