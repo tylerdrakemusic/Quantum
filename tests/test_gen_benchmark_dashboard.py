@@ -113,3 +113,20 @@ def test_load_cache_widget_data_includes_backup_fill_date(tmp_path, monkeypatch)
     assert any(ts == "2026-06-01T08:03:34Z" for ts, _ in data["sparkline_points"])
     assert data["last_fill_peak"] == 2000
     assert data["sparkline_points"][-1][0] == "2026-06-01T08:03:34Z"
+
+
+def test_load_cache_widget_data_includes_public_integrity_status(tmp_path, monkeypatch):
+    import cache_integrity
+
+    root = tmp_path / "quantum"
+    live_dir = root / "src" / "data" / "liveCache"
+    live_dir.mkdir(parents=True)
+    live_path = live_dir / "ty_string_cache.txt"
+    live_path.write_text("01\n10\n", encoding="utf-8")
+    cache_integrity.write_manifest(live_path)
+
+    monkeypatch.setattr(module, "_ROOT", root)
+    data = module._load_cache_widget_data()
+
+    assert data["integrity"]["verified"] is True
+    assert data["integrity"]["source"] == "quantum"
