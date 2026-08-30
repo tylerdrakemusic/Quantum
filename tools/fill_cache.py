@@ -34,11 +34,11 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import shutil
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -48,6 +48,7 @@ _ROOT = Path(__file__).resolve().parent.parent   # f:\⟨ψ⟩Quantum\
 sys.path.insert(0, str(_ROOT / "src" / "utils"))
 
 import execution_policy
+import cache_integrity
 
 POLICY_ID = "quantum_cache_fill_monthly"
 _BACKUP_DIR       = _ROOT / "qbackups"
@@ -229,34 +230,26 @@ def _print_status() -> None:
 
 
 def _persist_cache_fill(all_bitstrings: list[str]) -> int:
-    """Append new fill bits to the live cache and snapshot the result."""
-    _BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    _LIVE_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Ensure the live cache file ends with a newline before appending.
+    """Snapshot the old cache, then atomically replace it with the new cache."""
+    existing: list[str] = []
     if _LIVE_CACHE.exists():
-        try:
-            with open(_LIVE_CACHE, "rb") as fh:
-                fh.seek(-1, 2)
-                if fh.read(1) != b"\n":
-                    with open(_LIVE_CACHE, "a", encoding="utf-8") as append_fh:
-                        append_fh.write("\n")
-        except OSError:
-            pass
-
-    with open(_LIVE_CACHE, "a", encoding="utf-8") as fh:
-        for line in all_bitstrings:
-            fh.write(line + "\n")
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    backup_path = _BACKUP_DIR / f"ty_string_cache_{timestamp}.txt"
-    shutil.copy2(_LIVE_CACHE, backup_path)
-
+        validation = cache_integrity.validate_cache(_LIVE_CACHE)
+        if not validation.valid:
+            quarantined = cache_integrity.quarantine_cache(_LIVE_CACHE, _BACKUP_DIR / "quarantine")
+            _logger.warning("Malformed live cache quarantined: %s", quarantined)
+        else:
+            existing = [line.strip() for line in _LIVE_CACHE.read_text(encoding="utf-8").splitlines() if line.strip()]
+    replacement = cache_integrity.atomic_replace_cache(
+        _LIVE_CACHE,
+        _BACKUP_DIR,
+        existing + all_bitstrings,
+    )
     capacity_bytes = _LIVE_CACHE.stat().st_size
     _CAPACITY_BASELINE.write_text(f"{capacity_bytes}\n", encoding="utf-8")
 
     _logger.info("Capacity baseline: %s  (%d bytes)", _CAPACITY_BASELINE, capacity_bytes)
-    _logger.info("Backup written : %s  (%d bytes)", backup_path, backup_path.stat().st_size)
+    if replacement.backup_path:
+        _logger.info("Backup written : %s  (%d bytes)", replacement.backup_path, replacement.backup_path.stat().st_size)
     _logger.info("Live cache     : %s", _LIVE_CACHE)
     return sum(len(b) for b in all_bitstrings)
 

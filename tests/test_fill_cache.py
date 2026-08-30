@@ -96,6 +96,26 @@ def test_persist_cache_fill_appends_to_live_cache_and_writes_backup(tmp_path, mo
     assert len(backups) == 1
 
 
+def test_persist_cache_fill_quarantines_malformed_live_cache_before_replacement(tmp_path, monkeypatch):
+    root = tmp_path / "quantum"
+    live_dir = root / "src" / "data" / "liveCache"
+    live_dir.mkdir(parents=True, exist_ok=True)
+    live_cache = live_dir / "ty_string_cache.txt"
+    live_cache.write_text("01\ncorrupt\n", encoding="utf-8")
+
+    monkeypatch.setattr(module, "_ROOT", root)
+    monkeypatch.setattr(module, "_LIVE_DIR", live_dir)
+    monkeypatch.setattr(module, "_LIVE_CACHE", live_cache)
+    monkeypatch.setattr(module, "_BACKUP_DIR", root / "qbackups")
+    monkeypatch.setattr(module, "_CAPACITY_BASELINE", live_dir / "ty_string_cache_capacity.txt")
+
+    module._persist_cache_fill(["10"])
+
+    assert live_cache.read_text(encoding="utf-8") == "10\n"
+    quarantined = list((root / "qbackups" / "quarantine").glob("*.txt"))
+    assert len(quarantined) == 1
+
+
 def test_main_starts_one_elapsed_timer_and_records_success_duration(monkeypatch):
     events: list[dict[str, str]] = []
     monotonic_values = iter([10.0, 12.5])

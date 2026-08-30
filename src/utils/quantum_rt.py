@@ -64,6 +64,8 @@ import sys
 from pathlib import Path
 from typing import Any, MutableSequence, Sequence, TypeVar
 
+import cache_integrity
+
 _T = TypeVar("_T")
 
 _logger = logging.getLogger(__name__)
@@ -121,6 +123,10 @@ def _load_bitstream() -> str:
     bits_parts: list[str] = []
     for cache_path in files:
         try:
+            integrity = cache_integrity.verify_cache(cache_path)
+            if not integrity["valid"]:
+                _logger.warning("quantum_rt: rejected unverified cache file %s", cache_path.name)
+                continue
             with open(cache_path, encoding="utf-8", errors="ignore") as fh:
                 for raw_line in fh:
                     line = raw_line.strip()
@@ -286,11 +292,33 @@ def qRandomBitstring(n: int) -> str:
 # Module-level diagnostics
 # ---------------------------------------------------------------------------
 
-def _cache_status() -> dict:
+def cache_integrity_status(
+    cache_path: Path | None = None,
+    manifest_path: Path | None = None,
+) -> dict[str, object]:
+    """Return public cache provenance without exposing the manifest hash."""
+    target = cache_path or (_find_cache_files()[0] if _find_cache_files() else None)
+    if target is None:
+        return {"source": "secrets_fallback", "verified": False, "bit_count": 0}
+    try:
+        status = cache_integrity.verify_cache(target, manifest_path)
+    except (FileNotFoundError, OSError):
+        return {"source": "secrets_fallback", "verified": False, "bit_count": 0}
+    return {
+        "source": status["source"],
+        "verified": status["valid"],
+        "bit_count": status["bit_count"],
+        "manifest_present": status["manifest_present"],
+        "manifest_valid": status["manifest_valid"],
+    }
+
+
+def _cache_status() -> dict[str, object]:
     """Return a dict with cache statistics (for debugging)."""
     return {
         "total_bits": len(_stream._bits),
         "consumed_bits": _stream._cursor,
         "remaining_bits": max(0, len(_stream._bits) - _stream._cursor),
         "exhausted_warned": _stream._exhausted_warned,
+        "integrity": cache_integrity_status(),
     }

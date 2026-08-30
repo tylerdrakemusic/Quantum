@@ -39,6 +39,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = _ROOT / "reports" / "benchmark_dashboard.html"
 # Add src/utils directly so `import init_db` works
+sys.path.insert(0, str(_ROOT / "src" / "utils"))
+import cache_integrity
 
 # ---------------------------------------------------------------------------
 # Orion portrait lazy-loader
@@ -428,9 +430,23 @@ def _load_cache_widget_data() -> dict:
     # ── live cache bit count ──────────────────────────────────────────────
     live_path = _ROOT / "src" / "data" / "liveCache" / "ty_string_cache.txt"
     current_bits = 0
+    integrity: dict[str, object] = {
+        "verified": False,
+        "source": "secrets_fallback",
+        "bit_count": 0,
+    }
     if live_path.exists():
         text = live_path.read_text(encoding="utf-8", errors="ignore")
         current_bits = sum(1 for c in text if c in "01")
+        try:
+            status = cache_integrity.verify_cache(live_path)
+            integrity = {
+                "verified": status["valid"],
+                "source": status["source"],
+                "bit_count": status["bit_count"],
+            }
+        except (FileNotFoundError, OSError):
+            pass
 
     # ── sparkline from JSONL ──────────────────────────────────────────────
     jsonl_path = _ROOT / "src" / "data" / "cache_usage.jsonl"
@@ -485,6 +501,7 @@ def _load_cache_widget_data() -> dict:
         "last_fill_peak": last_fill_peak,
         "pct_consumed": pct_consumed,
         "sparkline_points": sparkline_points,
+        "integrity": integrity,
     }
 
 
@@ -833,6 +850,10 @@ def _build_cache_widget(data: dict) -> str:
     last_fill_peak = data["last_fill_peak"]
     pct_consumed = data["pct_consumed"]
     sparkline_points = data["sparkline_points"]
+    integrity = data.get("integrity", {})
+    integrity_verified = bool(integrity.get("verified", False))
+    integrity_label = "Verified quantum" if integrity_verified else "Secrets fallback"
+    integrity_class = "success" if integrity_verified else "warn"
 
     current_mb = f"{current_bits / 1_000_000:.2f}"
     peak_mb = f"{last_fill_peak / 1_000_000:.2f}"
@@ -881,6 +902,7 @@ def _build_cache_widget(data: dict) -> str:
         f'<div class="cache-card-header">'
         f'<span class="cache-icon">&#128267;</span>'
         f'<span class="cache-title">Quantum Entropy Cache</span>'
+        f'<span class="badge {integrity_class}">{integrity_label}</span>'
         f'</div>'
         f'<div class="cache-stat-row">'
         f'<div class="cache-stat">'
