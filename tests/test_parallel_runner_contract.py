@@ -21,6 +21,15 @@ def test_parallel_runner_contract_is_declared():
     assert runner.is_file()
 
 
+def test_canonical_ci_enables_parallel_runner():
+    root = Path(__file__).parents[1]
+    policy = json.loads((root / "tools" / "parallel_test_policy.json").read_text(encoding="utf-8"))
+    workflow = (root / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+
+    assert policy["parallel_ci"] is True
+    assert "python tools/run_tests.py --parallel" in workflow
+
+
 def test_build_command_composes_policy_exclusions_with_repository_marker_defaults():
     root = Path(__file__).parents[1]
     command = load_runner().build_command(parallel=False, junitxml=None)
@@ -39,6 +48,15 @@ def test_build_command_composes_policy_exclusions_with_repository_marker_default
     parallel_module_option = parallel_command.index("-m")
     parallel_expression = parallel_command[parallel_command.index("-m", parallel_module_option + 1) + 1]
     assert parallel_expression == marker_expression
+
+
+def test_parallel_command_uses_policy_declared_bounded_worker_count():
+    root = Path(__file__).parents[1]
+    policy = json.loads((root / "tools" / "parallel_test_policy.json").read_text(encoding="utf-8"))
+    parallel_command = load_runner().build_command(parallel=True, junitxml=None)
+
+    assert policy["worker_count"] > 0
+    assert parallel_command[parallel_command.index("-n") + 1] == str(policy["worker_count"])
 
 
 def test_main_propagates_worker_failure(monkeypatch):
