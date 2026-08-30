@@ -1,0 +1,27 @@
+{
+  "fr_id": "FR-20260829-quantum-ci-xdist",
+  "scope": "bounded Quantum pytest suite excluding ci_long_running",
+  "threshold_policy": "No speedup threshold asserted",
+  "serial": {
+    "command": "C:\\G\\python.exe tools/run_tests.py --junitxml tmp/pytest-serial.xml",
+    "exit_code": 1,
+    "duration_ms": 277863,
+    "result": "178 passed, 3 failed, 2 skipped, 1 deselected",
+    "failures": [
+      "tests/test_backend_availability_monitor.py::test_record_backend_health: SQLCipher file is not a database",
+      "tests/test_qkd_bb84.py::TestSifting::test_sifted_key_length_approx_half_raw[64]: stochastic ratio 0.703125 > 0.70",
+      "tests/test_qkd_bb84.py::TestQBEREve::test_eve_qber_above_threshold[64]: stochastic average 0.1334 < 0.15"
+    ]
+  },
+  "parallel": {
+    "command": "C:\\G\\python.exe tools/run_tests.py --parallel --junitxml tmp/pytest-parallel.xml",
+    "exit_code": 1,
+    "duration_ms": 67432,
+    "workers": 6,
+    "result": "180 passed, 1 failed, 2 skipped",
+    "failures": [
+      "tests/test_backend_availability_monitor.py::test_record_backend_health: SQLCipher file is not a database"
+    ]
+  },
+  "interpretation": "Parallel execution completed and propagated the worker failure. The shared DB failure reproduces serially and parallelly, so this evaluation does not claim full-suite safety is proven in the current local environment. CI remains configured to fail on parallel failure."
+}

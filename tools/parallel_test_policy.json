@@ -1,6 +1,6 @@
 {
-  "parallel_ci": false,
+  "parallel_ci": true,
   "parallel_supported": true,
   "excluded_markers": ["ci_long_running"],
-  "serial_reason": "Quantum simulators and long-running optimization tests may share process resources; CI remains serial pending evidence."
+  "serial_reason": "Serial execution is an evaluation and local fallback lane; canonical CI uses bounded pytest-xdist parallelism after parallel safety was proven."
 }
