@@ -1,5 +1,4 @@
-"""
-⟨ψ⟩Quantum — quantum_rt.py  (Quantum Random Toolkit)
+r"""⟨ψ⟩Quantum — quantum_rt.py  (Quantum Random Toolkit)
 
 Provides quantum-measurement-seeded random functions that mirror the
 standard library (random / secrets) API but draw entropy from real
@@ -64,7 +63,10 @@ import sys
 from pathlib import Path
 from typing import Any, MutableSequence, Sequence, TypeVar
 
-import cache_integrity
+try:
+    from . import cache_integrity
+except ImportError:
+    import cache_integrity
 
 _T = TypeVar("_T")
 
