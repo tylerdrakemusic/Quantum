@@ -50,12 +50,24 @@ Domain-specific QAOA adapters live in their domain-owner projects and import fro
 
 ## Quick Start
 
-```python
-# From any project:
-import sys
-sys.path.insert(0, "f:/executedcode/⟨ψ⟩Quantum/src")
-from core.quantum_rt import qRandom, qRax, qhoice, quuffle, qsample, qpermute, qRandomBool, qRandomBitstring
+Install the stable random API from the project root:
+
+```powershell
+python -m pip install .
 ```
+
+Then import the public namespace from any project:
+
+```python
+from quantum_toolkit import (
+  qRandom, qRax, qhoice, quuffle, qsample, qpermute,
+  qRandomBool, qRandomBitstring,
+)
+```
+
+The legacy `quantum_rt` import remains available as a compatibility shim and
+emits a `DeprecationWarning`. Migrate to `quantum_toolkit`; the shim is kept
+through the 0.x compatibility period and is not the source of new API.
 
 ## API Reference
 
