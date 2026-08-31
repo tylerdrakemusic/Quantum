@@ -40,7 +40,9 @@ _ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = _ROOT / "reports" / "benchmark_dashboard.html"
 # Add src/utils directly so `import init_db` works
 sys.path.insert(0, str(_ROOT / "src" / "utils"))
+sys.path.insert(0, str(_ROOT / "src"))
 import cache_integrity
+from quantum_toolkit.benchmark_provenance import normalize_result
 
 # ---------------------------------------------------------------------------
 # Orion portrait lazy-loader
@@ -282,6 +284,9 @@ def _load_replay_runs() -> list[dict]:
                 "ci_95_low": row[7], "ci_95_high": row[8], "seed": row[9],
                 "order_summary": json.loads(row[10] or "{}"),
                 "provenance": json.loads(row[11] or "{}"), "created_at": row[12] or "",
+                "provenance_metadata": normalize_result(
+                    {"backend": None, "timestamp": row[12] or ""}, family="shor"
+                ),
             }
             for row in rows
         ]

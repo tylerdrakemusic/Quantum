@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
+from quantum_toolkit.benchmark_provenance import adapt_result
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.preprocessing import StandardScaler
@@ -164,6 +165,17 @@ class EpisodeFixture:
 class PrototypeResult:
     aggregate_json: dict[str, Any]
     _raw: dict[str, Any]
+
+    @property
+    def provenance(self) -> dict[str, object]:
+        """Return provenance for the aggregate-only kernel experiment."""
+        return adapt_result(
+            "quantum_kernel",
+            self.aggregate_json,
+            run_id=None,
+            backend_name="aer",
+            configuration={"synthetic_only": True},
+        )
 
     def write_evidence(self, directory: Path) -> Path:
         """Write only redacted aggregate evidence and return its path."""

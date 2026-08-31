@@ -51,6 +51,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent   # f:\⟨ψ⟩Quantum\
 # Add src/utils directly so `import init_db` works (no __init__.py in utils/)
 sys.path.insert(0, str(_ROOT / "src" / "utils"))
+sys.path.insert(0, str(_ROOT / "src"))
 
 # ── Constants ──────────────────────────────────────────────────────────────
 POLICY_ID = "shors_monthly_benchmark"
@@ -58,6 +59,7 @@ N_SHOTS: int = 4096                 # Shots per circuit submission
 N_COUNT: int = 4                    # Counting qubits for QPE (4 gives ~93.75% success)
 
 import execution_policy
+from quantum_toolkit.benchmark_provenance import adapt_result
 
 MAX_QPU_SECONDS: int = execution_policy.policy_qpu_cap_seconds(POLICY_ID, 300)
 
@@ -555,7 +557,7 @@ def run_benchmark(
 
     notes = f"a=7, N_COUNT={N_COUNT}, phase={best_phase}, r={r}, job={outcome['ibm_job_id']}"
 
-    return {
+    result = {
         "n_value": n_value,
         "n_qubits": n_total,
         "success": success,
@@ -564,6 +566,12 @@ def run_benchmark(
         "backend": backend_name,
         "notes": notes,
     }
+    result["provenance"] = adapt_result(
+        "shor", result, run_id=outcome.get("ibm_job_id"),
+        backend_name=backend_name,
+        configuration={"n_value": n_value, "n_qubits": n_total, "shots": N_SHOTS},
+    )
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
