@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import subprocess
 import warnings
@@ -82,7 +83,7 @@ def test_editable_install_exposes_public_namespace(tmp_path: Path) -> None:
         [sys.executable, "-m", "venv", "--system-site-packages", str(venv_root)],
         check=True,
     )
-    venv_python = venv_root / "Scripts" / "python.exe"
+    venv_python = venv_root / ("Scripts" if os.name == "nt" else "bin") / "python"
     subprocess.run(
         [
             str(venv_python),
