@@ -22,6 +22,7 @@ import init_db
 def _manifest() -> dict:
     return {
         "manifest_version": MANIFEST_VERSION,
+        "provenance_status": "provenance",
         "identity": {
             "run_id": "run-123",
             "family": "shor",
@@ -47,6 +48,14 @@ def test_validate_manifest_rejects_missing_required_section() -> None:
     del manifest["evidence_references"]
 
     with pytest.raises(ValueError, match="evidence_references"):
+        validate_manifest(manifest)
+
+
+def test_validate_manifest_rejects_missing_provenance_status() -> None:
+    manifest = _manifest()
+    del manifest["provenance_status"]
+
+    with pytest.raises(ValueError, match="provenance_status"):
         validate_manifest(manifest)
 
 

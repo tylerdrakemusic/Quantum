@@ -22,12 +22,20 @@ def validate_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
     """Validate and return a copy of a versioned benchmark manifest."""
     if not isinstance(manifest, Mapping):
         raise ValueError("manifest must be a mapping")
-    required = {"manifest_version", *_SECTIONS, "timestamp", "evidence_references"}
+    required = {
+        "manifest_version",
+        "provenance_status",
+        *_SECTIONS,
+        "timestamp",
+        "evidence_references",
+    }
     missing = sorted(required - set(manifest))
     if missing:
         raise ValueError(f"missing required manifest field: {missing[0]}")
     if manifest["manifest_version"] != MANIFEST_VERSION:
         raise ValueError("unsupported manifest_version")
+    if manifest["provenance_status"] != PROVENANCE_STATUS:
+        raise ValueError("unsupported provenance_status")
     for section in _SECTIONS:
         if not isinstance(manifest[section], Mapping):
             raise ValueError(f"manifest section must be a mapping: {section}")
