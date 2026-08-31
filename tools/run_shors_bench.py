@@ -59,7 +59,7 @@ N_SHOTS: int = 4096                 # Shots per circuit submission
 N_COUNT: int = 4                    # Counting qubits for QPE (4 gives ~93.75% success)
 
 import execution_policy
-from quantum_toolkit.benchmark_provenance import adapt_result
+from quantum_toolkit.benchmark_provenance import adapt_result, persist_manifest
 
 MAX_QPU_SECONDS: int = execution_policy.policy_qpu_cap_seconds(POLICY_ID, 300)
 
@@ -612,6 +612,7 @@ def persist_result(result: dict) -> int:
         backend=result["backend"],
         notes=result.get("notes"),
     )
+    persist_manifest(conn, result["provenance"])
     conn.close()
     _log.info("DB row inserted: shors_qpu_bench.id = %d", row_id)
     return row_id

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import json
 from typing import Any, Mapping
 
 MANIFEST_VERSION = "1.0"
@@ -111,6 +112,35 @@ def adapt_result(
         evidence_references=evidence_references,
         timestamp=result.get("timestamp"),
     )
+
+
+def persist_manifest(conn: Any, manifest: Mapping[str, Any]) -> int:
+    """Persist one new manifest in the additive provenance table."""
+    validated = validate_manifest(manifest)
+    identity = validated["identity"]
+    family = identity.get("family")
+    run_id = identity.get("run_id")
+    if family not in SUPPORTED_FAMILIES:
+        raise ValueError("manifest identity.family must be a supported family")
+    if not isinstance(run_id, str) or not run_id:
+        raise ValueError("manifest identity.run_id is required for persistence")
+    cursor = conn.execute(
+        """INSERT INTO benchmark_provenance
+           (run_id, identity_family, manifest_version, provenance_status,
+            manifest_json, evidence_references_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            run_id,
+            family,
+            validated["manifest_version"],
+            validated["provenance_status"],
+            json.dumps(validated, ensure_ascii=False, sort_keys=True),
+            json.dumps(validated["evidence_references"], ensure_ascii=False),
+            validated["timestamp"],
+        ),
+    )
+    conn.commit()
+    return int(getattr(cursor, "lastrowid", 0) or 0)
 
 
 create_manifest = build_manifest

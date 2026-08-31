@@ -50,7 +50,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src" / "utils"))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from init_db import get_connection, init_db  # noqa: E402
-from quantum_toolkit.benchmark_provenance import adapt_result  # noqa: E402
+from quantum_toolkit.benchmark_provenance import adapt_result, persist_manifest  # noqa: E402
 
 MOL_DIR = PROJECT_ROOT / "src" / "data" / "molecules"
 
@@ -174,27 +174,6 @@ def run_vqe(
     print(f"  AC met     : {'YES' if delta_target < cfg['ac_window'] else 'NO'}")
     print("=" * 64)
 
-    # Insert into encrypted DB
-    init_db()
-    conn = get_connection()
-    conn.execute(
-        """INSERT INTO vqe_runs (
-            run_date, molecule, bond_length_ang, n_qubits, n_pauli_terms,
-            ansatz, n_parameters, optimizer,
-            final_energy, fci_reference, delta_ha,
-            n_evals, wall_clock_sec, backend, timestamp
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (
-            ts[:10], cfg["label"], cfg["bond_length"], qop.num_qubits, len(qop),
-            "UCCSD", n_params, "SLSQP",
-            round(final_total, 8), round(fci_total, 8), round(delta_fci, 8),
-            eval_count[0], round(wall, 3), backend_label, ts,
-        ),
-    )
-    conn.commit()
-    conn.close()
-    print(f"  Row inserted into quantumpsi.db vqe_runs")
-
     result = {
         "molecule":      cfg["label"],
         "n_qubits":      qop.num_qubits,
@@ -216,6 +195,27 @@ def run_vqe(
         backend_name=backend_label,
         configuration={"molecule": molecule, "ansatz": "UCCSD", "optimizer": "SLSQP"},
     )
+
+    # Persist the legacy-shaped row and its additive versioned manifest together.
+    init_db()
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO vqe_runs (
+            run_date, molecule, bond_length_ang, n_qubits, n_pauli_terms,
+            ansatz, n_parameters, optimizer,
+            final_energy, fci_reference, delta_ha,
+            n_evals, wall_clock_sec, backend, timestamp
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            ts[:10], cfg["label"], cfg["bond_length"], qop.num_qubits, len(qop),
+            "UCCSD", n_params, "SLSQP",
+            round(final_total, 8), round(fci_total, 8), round(delta_fci, 8),
+            eval_count[0], round(wall, 3), backend_label, ts,
+        ),
+    )
+    persist_manifest(conn, result["provenance"])
+    conn.close()
+    print(f"  Rows inserted into quantumpsi.db vqe_runs and benchmark_provenance")
     return result
 
 
