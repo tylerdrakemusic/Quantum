@@ -47,8 +47,10 @@ from qiskit_nature.second_q.problems import ElectronicStructureProblem
 # Project paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src" / "utils"))
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from init_db import get_connection, init_db  # noqa: E402
+from quantum_toolkit.benchmark_provenance import adapt_result, persist_manifest  # noqa: E402
 
 MOL_DIR = PROJECT_ROOT / "src" / "data" / "molecules"
 
@@ -172,7 +174,29 @@ def run_vqe(
     print(f"  AC met     : {'YES' if delta_target < cfg['ac_window'] else 'NO'}")
     print("=" * 64)
 
-    # Insert into encrypted DB
+    result = {
+        "molecule":      cfg["label"],
+        "n_qubits":      qop.num_qubits,
+        "n_pauli_terms": len(qop),
+        "n_params":      n_params,
+        "final_energy":  final_total,
+        "fci_reference": fci_total,
+        "delta_fci":     delta_fci,
+        "delta_target":  delta_target,
+        "ac_window":     cfg["ac_window"],
+        "ac_met":        delta_target < cfg["ac_window"],
+        "evals":         eval_count[0],
+        "wall_sec":      wall,
+        "backend":       backend_label,
+        "timestamp":     ts,
+    }
+    result["provenance"] = adapt_result(
+        "vqe", result, run_id=f"vqe-{molecule}-{ts}",
+        backend_name=backend_label,
+        configuration={"molecule": molecule, "ansatz": "UCCSD", "optimizer": "SLSQP"},
+    )
+
+    # Persist the legacy-shaped row and its additive versioned manifest together.
     init_db()
     conn = get_connection()
     conn.execute(
@@ -189,26 +213,10 @@ def run_vqe(
             eval_count[0], round(wall, 3), backend_label, ts,
         ),
     )
-    conn.commit()
+    persist_manifest(conn, result["provenance"])
     conn.close()
-    print(f"  Row inserted into quantumpsi.db vqe_runs")
-
-    return {
-        "molecule":      cfg["label"],
-        "n_qubits":      qop.num_qubits,
-        "n_pauli_terms": len(qop),
-        "n_params":      n_params,
-        "final_energy":  final_total,
-        "fci_reference": fci_total,
-        "delta_fci":     delta_fci,
-        "delta_target":  delta_target,
-        "ac_window":     cfg["ac_window"],
-        "ac_met":        delta_target < cfg["ac_window"],
-        "evals":         eval_count[0],
-        "wall_sec":      wall,
-        "backend":       backend_label,
-        "timestamp":     ts,
-    }
+    print(f"  Rows inserted into quantumpsi.db vqe_runs and benchmark_provenance")
+    return result
 
 
 def main() -> int:

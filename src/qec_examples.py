@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Literal
 
+from quantum_toolkit.benchmark_provenance import adapt_result
+
 Fault = tuple[int, Literal["X", "Z"]]
 
 
@@ -20,6 +22,16 @@ class QECResult:
     reason: str
     backend: str
     counts: tuple[tuple[str, int], ...]
+
+    @property
+    def provenance(self) -> dict[str, object]:
+        """Return the unified provenance representation for this run."""
+        return adapt_result(
+            "qec",
+            {"logical_outcome": self.logical_outcome, "correctable": self.correctable},
+            backend_name=self.backend,
+            configuration={"code": self.code, "distance": self.distance},
+        )
 
 
 def run_repetition_code(

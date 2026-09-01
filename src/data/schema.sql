@@ -22,6 +22,20 @@ CREATE TABLE IF NOT EXISTS benchmarks (
 CREATE INDEX IF NOT EXISTS idx_benchmarks_algorithm ON benchmarks(algorithm);
 CREATE INDEX IF NOT EXISTS idx_benchmarks_backend ON benchmarks(backend);
 
+CREATE TABLE IF NOT EXISTS benchmark_provenance (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id                   TEXT NOT NULL UNIQUE,
+    identity_family          TEXT NOT NULL,
+    manifest_version         TEXT NOT NULL,
+    provenance_status        TEXT NOT NULL,
+    manifest_json            TEXT NOT NULL,
+    evidence_references_json TEXT NOT NULL,
+    created_at               TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_benchmark_provenance_family
+    ON benchmark_provenance(identity_family);
+
 CREATE TABLE IF NOT EXISTS shor_replay_benchmarks (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id              TEXT NOT NULL,
