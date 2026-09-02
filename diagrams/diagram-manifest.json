@@ -1,0 +1,51 @@
+{
+  "$schema": "https://workspace.local/diagram-manifest.schema.json",
+  "schema_version": 1,
+  "repository": "quantum",
+  "diagrams": [
+    {
+      "path": "diagrams/quantum-architecture.mmd",
+      "kind": "architecture",
+      "renderer_risk": "medium",
+      "fallback_risk": "medium",
+      "split_required": false,
+      "lineage": {
+        "parent": null,
+        "derived_views": ["diagrams/quantum-derived-cache-integrity.mmd"]
+      }
+    },
+    {
+      "path": "diagrams/quantum-db-schema.mmd",
+      "kind": "database-schema",
+      "renderer_risk": "medium",
+      "fallback_risk": "medium",
+      "split_required": false,
+      "lineage": {
+        "parent": null,
+        "derived_views": []
+      }
+    },
+    {
+      "path": "diagrams/quantum-derived-cache-integrity.mmd",
+      "kind": "derived-lifecycle",
+      "renderer_risk": "medium",
+      "fallback_risk": "medium",
+      "split_required": false,
+      "lineage": {
+        "parent": "diagrams/quantum-architecture.mmd",
+        "derived_views": []
+      }
+    },
+    {
+      "path": "diagrams/quantum-tech-stack.mmd",
+      "kind": "technology-stack",
+      "renderer_risk": "medium",
+      "fallback_risk": "medium",
+      "split_required": false,
+      "lineage": {
+        "parent": null,
+        "derived_views": []
+      }
+    }
+  ]
+}

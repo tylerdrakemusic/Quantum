@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -30,4 +31,28 @@ def test_quantum_mermaid_sources_fit_local_rendering_budget_and_traceability() -
     assert (
         "%% Traceability.parent: diagrams/quantum-architecture.mmd"
         in diagrams["quantum-derived-cache-integrity.mmd"]
+    )
+
+
+def test_quantum_manifest_enumerates_sources_and_cache_integrity_lineage() -> None:
+    manifest = json.loads(
+        (DIAGRAMS_DIR / "diagram-manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["schema_version"] == 1
+    assert manifest["repository"] == "quantum"
+    records = {record["path"]: record for record in manifest["diagrams"]}
+    assert set(records) == {f"diagrams/{name}" for name in DIAGRAM_NAMES}
+    assert records["diagrams/quantum-architecture.mmd"]["lineage"] == {
+        "parent": None,
+        "derived_views": ["diagrams/quantum-derived-cache-integrity.mmd"],
+    }
+    assert records["diagrams/quantum-derived-cache-integrity.mmd"]["lineage"] == {
+        "parent": "diagrams/quantum-architecture.mmd",
+        "derived_views": [],
+    }
+    assert all(
+        {"kind", "renderer_risk", "fallback_risk", "split_required", "lineage"}
+        <= record.keys()
+        for record in records.values()
     )
