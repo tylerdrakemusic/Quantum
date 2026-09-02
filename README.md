@@ -32,6 +32,11 @@ Tyler James Drake's quantum computing project. Provides quantum random number ge
 │   └── algorithm_roadmap.md     # Provider strategy + next algorithms
 ├── docs/                        # Documentation
 │   └── archive/completed_tasks.md
+├── diagrams/                    # Quantum architecture and data-flow diagrams
+│   ├── quantum-architecture.mmd
+│   ├── quantum-db-schema.mmd
+│   ├── quantum-derived-cache-integrity.mmd
+│   └── quantum-tech-stack.mmd
 ├── AGENT_STARTUP.md             # Agent context bootstrap
 ├── PROJECT_PROFILE.json         # Project configuration
 ├── TODO_AI.md                   # Agent task queue

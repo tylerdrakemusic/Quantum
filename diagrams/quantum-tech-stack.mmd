@@ -1,0 +1,48 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a2e3a', 'primaryTextColor': '#d0ecf8', 'edgeLabelBackground': '#0f1318', 'lineColor': '#4a7a9a'}}}%%
+graph TB
+    subgraph Experiments["⟨ψ⟩ Quantum experiments"]
+        Shor[Shor benchmark]:::quantum
+        VQE[VQE benchmark]:::quantum
+        QAOA[QAOA-family experiments]:::quantum
+        QEC[QEC examples]:::quantum
+        Kernel[Quantum-kernel experiment]:::quantum
+    end
+    subgraph Provenance["Versioned benchmark provenance"]
+        Adapter[quantum_toolkit.benchmark_provenance<br/>adapt_result]:::quantum
+        Manifest[manifest version 1.0<br/>identity · execution · backend<br/>configuration · result]:::state
+        Evidence[timestamp + evidence references]:::state
+        Legacy[normalize_result<br/>legacy read-time view]:::quantum
+    end
+    subgraph Runtime["Quantum runtime and persistence"]
+        Python[Python 3.11]:::quantum
+        Qiskit[qiskit · qiskit-aer<br/>qiskit-algorithms]:::quantum
+        Chem[qiskit-nature<br/>openfermion]:::quantum
+        Numpy[numpy · scipy]:::quantum
+        Database[(quantumpsi.db<br/>SQLCipher)]:::db
+        Dashboard[gen_benchmark_dashboard.py<br/>benchmark_dashboard.html]:::quantum
+    end
+    Shor --> Adapter
+    VQE --> Adapter
+    QAOA --> Adapter
+    QEC --> Adapter
+    Kernel --> Adapter
+    Python --> Experiments
+    Python --> Adapter
+    Python --> Qiskit
+    Python --> Chem
+    Python --> Numpy
+    Adapter ==> Manifest
+    Manifest --> Evidence
+    Manifest ==> Database
+    Database --> Dashboard
+    Legacy --> Dashboard
+
+classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
+classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
+classDef quantum  fill:#251a3a,stroke:#a07adf,color:#e8d0f8
+classDef manifest fill:#3a2e1a,stroke:#d4a96a,color:#f8ead0
+classDef ws       fill:#1a3a30,stroke:#6ad4b4,color:#d0f8ee
+classDef tyler    fill:#2a1a3a,stroke:#9e4aff,color:#fff
+classDef ext      fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0
+classDef db       fill:#3a3010,stroke:#d4c050,color:#f8f0c0
+classDef state    fill:#1a1a1a,stroke:#888888,color:#cccccc

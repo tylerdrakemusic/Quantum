@@ -1,0 +1,57 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a2e3a', 'primaryTextColor': '#d0ecf8', 'edgeLabelBackground': '#0f1318', 'lineColor': '#4a7a9a'}}}%%
+%% is_derived_view=true
+%% Traceability.parent: diagrams/quantum-architecture.mmd
+graph TB
+    Overview[quantum-architecture.mmd<br/>cache lifecycle summary]
+    subgraph Inputs["Cache lifecycle inputs"]
+        GuardTask[QuantumCacheDepletionGuard_Daily]
+        CacheGuard[tools/cache_depletion_guard.py]
+        FillCache[tools/fill_cache.py]
+        VerifyTool[tools/verify_cache.py]
+        CacheCapacity[qbackups/<br/>ty_string_cache_capacity.txt]
+        CacheHealthLog[(quantumpsi.db<br/>cache_health_log table)]
+    end
+    subgraph CacheIntegrity["Cache integrity lifecycle"]
+        IntegrityModule[cache_integrity.py<br/>validate_cache, verify_cache]
+        CacheFile[ty_string_cache.txt]
+        SHA256Manifest[SHA-256 manifests]
+        AtomicReplace[atomic replacement]
+        BackupLineage[backup lineage<br/>qbackups/]
+        Quarantine[corruption quarantine]
+        IntegrityStatus[quantum_rt/dashboard<br/>integrity status]
+    end
+    Reports[reports/<br/>benchmark dashboard]
+    GuardTask --> CacheGuard
+    CacheGuard --> CacheHealthLog
+    CacheGuard --> FillCache
+    FillCache --> CacheCapacity
+    CacheGuard --> IntegrityModule
+    VerifyTool --> IntegrityModule
+    IntegrityModule --> CacheFile
+    IntegrityModule --> SHA256Manifest
+    IntegrityModule --> AtomicReplace
+    AtomicReplace --> BackupLineage
+    IntegrityModule --> Quarantine
+    IntegrityModule --> IntegrityStatus
+    IntegrityStatus --> Reports
+    Overview -.-> IntegrityModule
+    class Overview quantum
+    class GuardTask ext
+    class CacheGuard,FillCache,VerifyTool,IntegrityModule quantum
+    class CacheHealthLog,CacheCapacity,CacheFile,SHA256Manifest,AtomicReplace,BackupLineage,Quarantine db
+    class IntegrityStatus state
+    class Reports store
+
+classDef tyler   fill:#2a1a3a,stroke:#9e4aff,color:#fff
+classDef orch    fill:#1a3a52,stroke:#4a9eff,color:#fff
+classDef ws      fill:#1a3a30,stroke:#6ad4b4,color:#d0f8ee
+classDef ext     fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0
+classDef db      fill:#3a3010,stroke:#d4c050,color:#f8f0c0
+classDef state   fill:#1a1a1a,stroke:#888888,color:#cccccc
+classDef life    fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
+classDef music   fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
+classDef quantum fill:#251a3a,stroke:#a07adf,color:#e8d0f8
+classDef manifest fill:#3a2e1a,stroke:#d4a96a,color:#f8ead0
+classDef alg     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
+classDef back    fill:#1a3a52,stroke:#4a9eff,color:#fff
+classDef store   fill:#1a3a30,stroke:#6ad4b4,color:#d0f8ee
