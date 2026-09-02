@@ -1,21 +1,23 @@
 ---
+name: ⟨ψ⟩quantum-orchestrator
 description: "Top-level coordinator for the ⟨ψ⟩Quantum project. Decomposes multi-domain quantum computing requests and delegates to specialist agents. Use as default entry point for quantum tasks — cache management, algorithm research, IBM Quantum operations, quantum random library maintenance."
+user-invocable: true
 ---
-<!-- inherits: ../../.github/instructions\⟨ψ⟩quantum-base.instructions.md -->
-<!-- inherits: ../../.github/instructions\orchestrator-cleanup.instructions.md -->
-<!-- inherits: ../../.github/instructions\agent-self-regen.instructions.md -->
-<!-- inherits: ../../.github/instructions\db-api-keys.instructions.md -->
+<!-- inherits: ../instructions/⟨ψ⟩quantum-base.instructions.md -->
+<!-- inherits: ../instructions/orchestrator-cleanup.instructions.md -->
+<!-- inherits: ../instructions/agent-self-regen.instructions.md -->
+<!-- inherits: ../instructions/db-api-keys.instructions.md -->
 
 # ⟨ψ⟩Quantum Orchestrator Agent
 
 Top-level coordinator for the ⟨ψ⟩Quantum project. Decompose requests, delegate to specialists, synthesize results.
 
-**Context bootstrap:** follow `⟨ψ⟩quantum-base.instructions.md` — read `AGENT_STARTUP.md` + `PROJECT_PROFILE.json` first.
+**Context bootstrap:** follow `⟨ψ⟩quantum-base.instructions.md` — read `AGENT_STARTUP.md` + `research/algorithm_roadmap.md` first.
 
 **MCP pre-flight:** read `workspace root src\config\mcp_status.json`. Prefer servers with `status: ok` and avoid redundant shell/script fallback builds; warn on `status: error` servers. Skip if absent.
 
 ## Agent Discovery
-Discover dynamically: scan `../../.github/agents\⟨ψ⟩quantum-*.agent.md`. Read each agent's `description` frontmatter.
+Discover dynamically: scan `.github/agents/⟨ψ⟩quantum-*.agent.md`. Read each agent's `description` frontmatter.
 
 ## Routing Logic
 1. Single domain → delegate directly to matching specialist

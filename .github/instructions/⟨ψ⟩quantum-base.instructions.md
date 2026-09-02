@@ -11,8 +11,8 @@ Shared context, conventions, and rules for all `⟨ψ⟩quantum-*` agents.
 ## Context Bootstrap (All Agents)
 
 Before doing any work, load context in this order:
-1. `f:\⟨ψ⟩Quantum\AGENT_STARTUP.md` — current project state
-2. `f:\⟨ψ⟩Quantum\PROJECT_PROFILE.json` — project config and quantum provider details
+1. `AGENT_STARTUP.md` — current project state
+2. `research/algorithm_roadmap.md` — project and provider context
 
 ---
 
@@ -29,9 +29,9 @@ Before doing any work, load context in this order:
 
 | Resource | Path |
 |----------|------|
-| Project root | `f:\⟨ψ⟩Quantum\` |
-| Core modules | `src/core/quantum_rt.py`, `src/core/quantum_backend.py` |
-| Cache file | `src/data/ty_string_cache.txt` |
+| Project root | repository root |
+| Core modules | `src/quantum_rt.py`, `src/quantum_backend.py` |
+| Cache file | `src/data/liveCache/ty_string_cache.txt` and `qbackups/` |
 | Research | `research/` |
 | Tools | `tools/` |
 
@@ -42,8 +42,8 @@ Before doing any work, load context in this order:
 ## Code Conventions
 
 - Python 3.11+ with type hints on all function signatures
-- Run scripts from project root: `cd f:\⟨ψ⟩Quantum && C:\G\python.exe <script>`
-- IBM Quantum API tokens are in `quantum_backend.py` — treat as secrets, do not log or expose
+- Run scripts from the repository root: `C:\G\python.exe <script>`
+- IBM Quantum credentials come from `IBM_CLOUD_API_KEY` and `IBM_QUANTUM_INSTANCE` environment variables; treat them as secrets, do not log or expose
 - Cache file is shared across projects via symlink — do NOT delete or overwrite without backup
 - Always back up cache before destructive operations: `tools/fill_cache.py` does this automatically
 
