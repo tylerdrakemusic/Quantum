@@ -1,0 +1,43 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a2e3a', 'primaryTextColor': '#d0ecf8', 'edgeLabelBackground': '#0f1318', 'lineColor': '#4a7a9a'}}}%%
+%% is_derived_view=false
+%% Traceability.derived_views: diagrams/quantum-derived-cache-integrity.mmd
+graph TB
+    Shor[Shor benchmark<br/>tools/run_shors_bench.py]:::quantum
+    VQE[VQE benchmark<br/>tools/bench_vqe.py]:::quantum
+    QAOA[QAOA-family experiments<br/>qaoa.py]:::quantum
+    QEC[QEC examples<br/>src/qec_examples.py]:::quantum
+    Kernel[Quantum-kernel experiment<br/>src/quantum_kernel_svm.py]:::quantum
+    Contract[benchmark_provenance.py<br/>adapt_result + normalize_result]:::quantum
+    Manifest[Versioned benchmark manifest<br/>manifest_version 1.0]:::state
+    Sections[identity · execution · backend<br/>configuration · result]:::state
+    Evidence[Timestamp + evidence references<br/>paths or identifiers]:::state
+    QuantumDB[(quantumpsi.db<br/>SQLCipher)]:::db
+    Legacy[Historical benchmark rows<br/>unchanged source data]:::db
+    Normalize[Dashboard legacy normalization<br/>provenance_status = legacy]:::quantum
+    Dashboard[reports/benchmark_dashboard.html<br/>generated dashboard]:::store
+    Backends[IBM Quantum + local Aer<br/>configured experiment backends]:::ext
+    Shor --> Contract
+    VQE --> Contract
+    QAOA --> Contract
+    QEC --> Contract
+    Kernel --> Contract
+    Contract ==> Manifest
+    Manifest --> Sections
+    Manifest --> Evidence
+    Shor --> Backends
+    VQE --> Backends
+    Manifest ==> QuantumDB
+    Legacy --> Normalize
+    Normalize --> Dashboard
+    QuantumDB --> Dashboard
+
+classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
+classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
+classDef quantum  fill:#251a3a,stroke:#a07adf,color:#e8d0f8
+classDef manifest fill:#3a2e1a,stroke:#d4a96a,color:#f8ead0
+classDef ws       fill:#1a3a30,stroke:#6ad4b4,color:#d0f8ee
+classDef tyler    fill:#2a1a3a,stroke:#9e4aff,color:#fff
+classDef ext      fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0
+classDef db       fill:#3a3010,stroke:#d4c050,color:#f8f0c0
+classDef state    fill:#1a1a1a,stroke:#888888,color:#cccccc
+classDef store    fill:#1a3a30,stroke:#6ad4b4,color:#d0f8ee

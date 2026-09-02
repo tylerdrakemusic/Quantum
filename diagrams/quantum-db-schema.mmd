@@ -1,0 +1,116 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a2e3a', 'primaryTextColor': '#d0ecf8', 'edgeLabelBackground': '#0f1318', 'lineColor': '#4a7a9a'}}}%%
+erDiagram
+    BENCHMARKS {
+        integer id PK
+        text algorithm
+        integer n_value
+        integer required_qubits
+        integer order_r
+        integer factor1
+        integer factor2
+        real total_time_sec
+        text backend
+        text timestamp
+    }
+
+    %% --- Shor's QPU benchmarking (FR-20260428-shors-monthly-qpu-bench) ---
+    SHORS_QPU_BENCH {
+        integer id PK
+        text run_date
+        integer n_value
+        integer n_qubits
+        integer success
+        text factor_found
+        real qpu_seconds
+        text backend
+        text notes
+    }
+
+    %% --- Seeded ideal/noisy Shor replay analysis (FR-20260822-quantum-shor-ideal-noisy-analysis) ---
+    SHOR_REPLAY_BENCHMARKS {
+        integer id PK
+        text run_id "idx_shor_replay_run_mode"
+        text mode "idx_shor_replay_run_mode"
+        integer n_value
+        integer repetitions
+        integer successes
+        real success_rate
+        real ci_95_low
+        real ci_95_high
+        integer seed
+        text order_summary_json
+        text provenance_json
+        text created_at
+    }
+
+    %% --- VQE molecular simulation runs (FR-20260430-vqe-aer-bench) ---
+    VQE_RUNS {
+        integer id PK
+        text run_date
+        text molecule
+        real bond_length_ang
+        integer n_qubits
+        integer n_pauli_terms
+        text ansatz
+        integer n_parameters
+        text optimizer
+        real final_energy
+        real fci_reference
+        real delta_ha
+        integer n_evals
+        real wall_clock_sec
+        text backend
+        text timestamp
+    }
+
+    %% --- Cache Monitoring ---
+    CACHE_HEALTH_LOG {
+        integer id PK
+        text ts
+        integer bits_remaining
+        integer capacity_bits
+        real pct_full
+        text action_taken
+    }
+
+    %% --- Backend availability monitor (FR-20260614) ---
+    BACKEND_HEALTH {
+        integer id PK
+        text provider
+        text status
+        real latency_ms
+        text error_msg
+        text checked_at
+    }
+
+    %% --- Execution policy events/audit (FR-20260527-execution-policy-auditor) ---
+    POLICY_EVENTS {
+        integer id PK
+        text event_time
+        text policy_id
+        text event_type
+        text status
+        text source
+        text detail
+        text next_run_at
+    }
+    POLICY_AUDIT_RUNS {
+        integer id PK
+        text run_ts
+        text status
+        text findings
+        text policy_file_hash
+    }
+
+    %% --- Batch job retry/backoff (FR-20260704-qiskit-aer-retry-supervisor) ---
+    JOB_RETRY_STATUS {
+        integer id PK
+        text job_id "unique idx_job_retry_status_job_id"
+        text backend
+        text status "pending/running/succeeded/failed/retrying"
+        integer attempt
+        integer max_attempts
+        text error_msg
+        text created_at
+        text updated_at
+    }
