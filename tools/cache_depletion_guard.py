@@ -205,6 +205,8 @@ def run_guard() -> None:
         # ------------------------------------------------------------------
         _log_health(conn, bits_remaining, capacity_bits, pct_full, "fill_triggered")
         _logger.info("Triggering early fill: %s", _FILL_SCRIPT)
+        conn.close()
+        conn = None
         subprocess.run(
             [sys.executable, str(_FILL_SCRIPT)],
             check=True,
@@ -212,7 +214,8 @@ def run_guard() -> None:
         _logger.info("Early fill completed successfully.")
 
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
