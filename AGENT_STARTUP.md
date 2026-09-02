@@ -22,13 +22,13 @@
 | **Workspace Root** | `f:\` |
 | **Parent Repo** | `f:\` (private git repo — source controlled) |
 | **Python Executable** | `C:\G\python.exe` |
-| **Agent Definitions** | `f:\.github\agents\⟨ψ⟩quantum-*.agent.md` |
-| **Instructions** | `f:\.github\instructions\⟨ψ⟩quantum-*.instructions.md` |
+| **Agent Definitions** | `.github/agents/⟨ψ⟩quantum-*.agent.md` |
+| **Instructions** | `.github/instructions/⟨ψ⟩quantum-*.instructions.md` |
 | **System Specs** | `f:\SYSTEM_SPECS.md` |
 
-### ⟨ψ⟩Quantum Agents (`f:\.github\agents\`)
+### ⟨ψ⟩Quantum Agents (`.github/agents/`)
 
-All ⟨ψ⟩Quantum agents are prefixed `⟨ψ⟩quantum-` and live at `f:\.github\agents\⟨ψ⟩quantum-*.agent.md`. **Scan that glob to discover available agents.**
+All ⟨ψ⟩Quantum agents are prefixed `⟨ψ⟩quantum-` and live at `.github/agents/⟨ψ⟩quantum-*.agent.md`. **Scan that glob to discover available agents.**
 
 | Agent | Purpose |
 |-------|---------|
@@ -36,7 +36,7 @@ All ⟨ψ⟩Quantum agents are prefixed `⟨ψ⟩quantum-` and live at `f:\.gith
 | **⟨ψ⟩quantum-research** | Quantum computing literature, algorithm exploration, use-case discovery |
 | **⊕workspace-hygiene** | Unified workspace hygiene — archive done tasks, prune stale files, agent infrastructure audit |
 
-> **Adding agents:** Create `f:\.github\agents\⟨ψ⟩quantum-<name>.agent.md` with a keyword-rich `description` in frontmatter.
+> **Adding agents:** Create `.github/agents/⟨ψ⟩quantum-<name>.agent.md` with a keyword-rich `description` in frontmatter.
 
 ## 3. Project Summary
 
