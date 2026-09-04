@@ -218,8 +218,16 @@ class _BitStream:
                 return val % upper
 
 
-# Module-level singleton
-_stream = _BitStream()
+# Lazy singleton: importing the public package must not scan and hash the cache.
+_stream: _BitStream | None = None
+
+
+def _get_stream() -> _BitStream:
+    """Return the process-wide bitstream, loading the cache on first use."""
+    global _stream
+    if _stream is None:
+        _stream = _BitStream()
+    return _stream
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +236,7 @@ _stream = _BitStream()
 
 def qRandom() -> float:
     """Return a quantum-seeded float in [0, 1)."""
-    return _stream.read_float()
+    return _get_stream().read_float()
 
 
 def qRax(a: int, b: int) -> int:
@@ -238,21 +246,21 @@ def qRax(a: int, b: int) -> int:
     if a == b:
         return a
     span = b - a + 1
-    return a + _stream.read_index(span)
+    return a + _get_stream().read_index(span)
 
 
 def qhoice(seq: Sequence[_T]) -> _T:
     """Return a single element chosen uniformly at random from seq."""
     if not seq:
         raise IndexError("qhoice from an empty sequence")
-    return seq[_stream.read_index(len(seq))]
+    return seq[_get_stream().read_index(len(seq))]
 
 
 def quuffle(lst: MutableSequence[Any]) -> None:
     """Shuffle lst in-place (Fisher-Yates), modelled after random.shuffle."""
     n = len(lst)
     for i in range(n - 1, 0, -1):
-        j = _stream.read_index(i + 1)
+        j = _get_stream().read_index(i + 1)
         lst[i], lst[j] = lst[j], lst[i]
 
 
@@ -265,7 +273,7 @@ def qsample(population: Sequence[_T], k: int) -> list[_T]:
     pool = list(population)
     result: list[_T] = []
     for i in range(k):
-        j = i + _stream.read_index(n - i)
+        j = i + _get_stream().read_index(n - i)
         pool[i], pool[j] = pool[j], pool[i]
         result.append(pool[i])
     return result
@@ -280,14 +288,14 @@ def qpermute(seq: Sequence[_T]) -> list[_T]:
 
 def qRandomBool() -> bool:
     """Return True or False with equal probability."""
-    return _stream.read_bool()
+    return _get_stream().read_bool()
 
 
 def qRandomBitstring(n: int) -> str:
     """Return a string of n '0'/'1' characters from the quantum cache."""
     if n < 0:
         raise ValueError(f"qRandomBitstring: n must be >= 0, got {n}")
-    return _stream.read_bits(n)
+    return _get_stream().read_bits(n)
 
 
 # ---------------------------------------------------------------------------

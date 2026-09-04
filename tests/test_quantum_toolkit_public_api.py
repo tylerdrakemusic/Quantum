@@ -32,6 +32,23 @@ def test_quantum_toolkit_exports_only_stable_random_api() -> None:
     assert not hasattr(quantum_toolkit, "QAOASolver")
 
 
+def test_public_api_import_does_not_load_the_cache(tmp_path: Path) -> None:
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import quantum_toolkit; print(quantum_toolkit.__all__)",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        env={**os.environ, "PYTHONPATH": str(SRC_ROOT)},
+    )
+
+    assert "qRandom" in probe.stdout
+
+
 def test_legacy_quantum_rt_shim_warns_and_forwards_public_functions() -> None:
     sys.modules.pop("quantum_rt", None)
     sys.path.insert(0, str(SRC_ROOT))
@@ -106,11 +123,14 @@ def test_editable_install_exposes_public_namespace(tmp_path: Path) -> None:
         text=True,
     )
     probe = subprocess.run(
-        [str(venv_python), "-c", "import quantum_toolkit; print(quantum_toolkit.qRandomBool())"],
+        [
+            str(venv_python),
+            "-c",
+            "import quantum_toolkit; print(quantum_toolkit.__all__)",
+        ],
         check=True,
         capture_output=True,
         text=True,
-        env={**__import__("os").environ, "PYTHONPATH": str(SRC_ROOT)},
     )
 
     location_fields = {
@@ -122,4 +142,5 @@ def test_editable_install_exposes_public_namespace(tmp_path: Path) -> None:
         and line.partition(":")[2].strip()
         for line in metadata.stdout.splitlines()
     )
-    assert probe.stdout.strip() in {"True", "False"}
+    assert "qRandom" in probe.stdout
+    assert "QAOASolver" not in probe.stdout
