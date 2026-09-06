@@ -33,6 +33,11 @@ The current tolerance set is version `2026-09-05`. VQE energy uses an absolute
 and relative tolerance of `0.02`; QAOA approximation ratio uses `0.05`; other
 metrics use the default `1e-6` values until a family-specific policy is added.
 
+The repetition-code QEC validation track adds a versioned local result under
+the same `qec` family. Its fixed matrix and digest are documented in
+`docs/qec_validation.md` and `research/qec_validation_baseline.json`; replay
+records retain the seed and TODO 552 provenance fields.
+
 ## IBM Runtime operations
 
 Runtime capture stores backend, provider, job, execution, retry, and
