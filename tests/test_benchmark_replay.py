@@ -103,7 +103,7 @@ def test_runtime_resubmission_rejects_already_retried_failed_job() -> None:
         submit=lambda: attempts.append("submitted") or "new-job-9",
     )
 
-    assert result == {"status": "not_eligible", "attempt": 0}
+    assert result == {"status": "retry_limit_reached", "attempt": 0}
     assert attempts == []
 
 
