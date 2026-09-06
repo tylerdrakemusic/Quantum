@@ -62,7 +62,9 @@ def test_fixed_matrix_covers_all_approved_distances_rounds_and_fault_rates() -> 
     results = run_validation_matrix(seed=20260906)
 
     assert len(results) == 3 * 3 * 3 * 3
-    assert {item["distance"] for item in results} == {3, 5, 7}
+    distances = [item["distance"] for item in results]
+    assert set(distances) == {3, 5, 7}
+    assert distances == ([3] * 27) + ([5] * 27) + ([7] * 27)
     assert {item["rounds"] for item in results} == {3, 5, 9}
     assert {
         item["data_pauli_x_rate"] for item in results
