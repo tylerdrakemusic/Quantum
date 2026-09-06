@@ -16,6 +16,7 @@ def test_quantum_mermaid_sources_preserve_traceability() -> None:
     }
 
     assert all(source.strip() for source in diagrams.values())
+    assert all(source.count("\n") + 1 <= 120 for source in diagrams.values())
     assert "%% is_derived_view=false" in diagrams["quantum-architecture.mmd"]
     assert (
         "%% Traceability.derived_views: diagrams/quantum-derived-cache-integrity.mmd"

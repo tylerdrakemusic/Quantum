@@ -12,7 +12,6 @@ erDiagram
         text backend
         text timestamp
     }
-
     %% --- Shor's QPU benchmarking (FR-20260428-shors-monthly-qpu-bench) ---
     SHORS_QPU_BENCH {
         integer id PK
@@ -25,7 +24,6 @@ erDiagram
         text backend
         text notes
     }
-
     %% --- Seeded ideal/noisy Shor replay analysis (FR-20260822-quantum-shor-ideal-noisy-analysis) ---
     SHOR_REPLAY_BENCHMARKS {
         integer id PK
@@ -42,7 +40,6 @@ erDiagram
         text provenance_json
         text created_at
     }
-
     %% --- Normalized cross-family replay results (FR-20260905) ---
     BENCHMARK_REPLAYS {
         integer id PK
@@ -54,7 +51,6 @@ erDiagram
         text replay_json
         text created_at
     }
-
     %% --- VQE molecular simulation runs (FR-20260430-vqe-aer-bench) ---
     VQE_RUNS {
         integer id PK
@@ -74,7 +70,6 @@ erDiagram
         text backend
         text timestamp
     }
-
     %% --- Cache Monitoring ---
     CACHE_HEALTH_LOG {
         integer id PK
@@ -84,7 +79,6 @@ erDiagram
         real pct_full
         text action_taken
     }
-
     %% --- Backend availability monitor (FR-20260614) ---
     BACKEND_HEALTH {
         integer id PK
@@ -94,7 +88,6 @@ erDiagram
         text error_msg
         text checked_at
     }
-
     %% --- Execution policy events/audit (FR-20260527-execution-policy-auditor) ---
     POLICY_EVENTS {
         integer id PK
@@ -113,7 +106,6 @@ erDiagram
         text findings
         text policy_file_hash
     }
-
     %% --- Batch job retry/backoff (FR-20260704-qiskit-aer-retry-supervisor) ---
     JOB_RETRY_STATUS {
         integer id PK
