@@ -64,7 +64,7 @@ def test_runtime_capture_redacts_credentials_and_bounds_resubmission() -> None:
             "provider": "ibm_quantum",
             "job_id": "job-7",
             "api_key": "secret",
-            "execution": {"retry_count": 1, "status": "failed"},
+            "execution": {"retry_count": 0, "status": "failed"},
         }
     )
 
@@ -88,6 +88,23 @@ def test_approved_runtime_resubmission_executes_bounded_callback() -> None:
 
     assert result == {"status": "submitted", "new_job_id": "new-job-8", "attempt": 1}
     assert attempts == ["submitted"]
+
+
+def test_runtime_resubmission_rejects_already_retried_failed_job() -> None:
+    captured = capture_runtime_result(
+        {"execution": {"status": "failed", "retry_count": 1}, "job_id": "job-9"}
+    )
+    attempts: list[str] = []
+
+    result = resubmit_runtime_job(
+        captured,
+        approved=True,
+        quota_remaining_seconds=30,
+        submit=lambda: attempts.append("submitted") or "new-job-9",
+    )
+
+    assert result == {"status": "not_eligible", "attempt": 0}
+    assert attempts == []
 
 
 @pytest.fixture

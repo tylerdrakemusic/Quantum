@@ -123,6 +123,8 @@ def resubmission_decision(
         status = "approval_required"
     elif captured.get("execution", {}).get("status") != "failed":
         status = "not_eligible"
+    elif captured.get("execution", {}).get("retry_count", 0) > 0:
+        status = "not_eligible"
     else:
         status = "approved"
     return {
