@@ -9,11 +9,10 @@ from pathlib import Path
 from typing import Literal
 
 from quantum_toolkit.benchmark_provenance import adapt_result
-from quantum_toolkit.benchmark_replay import replay_local
+from quantum_toolkit.benchmark_replay import TOLERANCE_VERSION, replay_local
 
 QEC_VALIDATION_VERSION = "2026-09-06.1"
-_TOLERANCE_VERSION = "2026-09-05"
-_ALLOWED_DISTANCES = (3, 5, 7)
+_TOLERANCE_VERSION = TOLERANCE_VERSION
 _ALLOWED_ROUNDS = (3, 5, 9)
 _ALLOWED_RATES = (0.001, 0.005, 0.01)
 
