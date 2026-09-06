@@ -9,19 +9,14 @@ DIAGRAM_NAMES = (
     "quantum-derived-cache-integrity.mmd",
     "quantum-tech-stack.mmd",
 )
-RENDERING_BUDGET_LINES = 120
-
-
-def test_quantum_mermaid_sources_fit_local_rendering_budget_and_traceability() -> None:
+def test_quantum_mermaid_sources_preserve_traceability() -> None:
     diagrams = {
         name: (DIAGRAMS_DIR / name).read_text(encoding="utf-8")
         for name in DIAGRAM_NAMES
     }
 
-    assert all(
-        len(source.splitlines()) <= RENDERING_BUDGET_LINES
-        for source in diagrams.values()
-    )
+    assert all(source.strip() for source in diagrams.values())
+    assert all(source.count("\n") + 1 <= 120 for source in diagrams.values())
     assert "%% is_derived_view=false" in diagrams["quantum-architecture.mmd"]
     assert (
         "%% Traceability.derived_views: diagrams/quantum-derived-cache-integrity.mmd"

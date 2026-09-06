@@ -8,10 +8,15 @@ graph TB
     QEC[QEC examples<br/>src/qec_examples.py]:::quantum
     Kernel[Quantum-kernel experiment<br/>src/quantum_kernel_svm.py]:::quantum
     Contract[benchmark_provenance.py<br/>adapt_result + normalize_result]:::quantum
+    Replay[benchmark_replay.py<br/>seeded replay + family comparison]:::quantum
+    Tolerance[Versioned tolerance contract<br/>2026-09-05 · absolute + relative]:::state
+    RuntimeCapture[IBM Runtime capture<br/>credential-safe metadata]:::ext
+    RuntimePolicy[Bounded resubmission policy<br/>operator approval + quota gate]:::state
     Manifest[Versioned benchmark manifest<br/>manifest_version 1.0]:::state
     Sections[identity · execution · backend<br/>configuration · result]:::state
     Evidence[Timestamp + evidence references<br/>paths or identifiers]:::state
     QuantumDB[(quantumpsi.db<br/>SQLCipher)]:::db
+    ReplayRows[benchmark_replays<br/>normalized replay rows]:::db
     Legacy[Historical benchmark rows<br/>unchanged source data]:::db
     Normalize[Dashboard legacy normalization<br/>provenance_status = legacy]:::quantum
     Dashboard[reports/benchmark_dashboard.html<br/>generated dashboard]:::store
@@ -24,9 +29,16 @@ graph TB
     Contract ==> Manifest
     Manifest --> Sections
     Manifest --> Evidence
+    Contract --> Replay
+    Replay --> Tolerance
+    Replay ==> ReplayRows
+    Replay --> RuntimeCapture
+    RuntimeCapture --> RuntimePolicy
+    RuntimePolicy -.->|"one approved retry via injected Runtime client"| RuntimeCapture
     Shor --> Backends
     VQE --> Backends
     Manifest ==> QuantumDB
+    ReplayRows --> Dashboard
     Legacy --> Normalize
     Normalize --> Dashboard
     QuantumDB --> Dashboard

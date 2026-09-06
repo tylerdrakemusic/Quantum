@@ -93,6 +93,20 @@ def _initialize_schema(conn: sqlcipher3.Connection) -> None:
     CREATE INDEX IF NOT EXISTS idx_benchmark_provenance_family
         ON benchmark_provenance(identity_family);
 
+    CREATE TABLE IF NOT EXISTS benchmark_replays (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id            TEXT NOT NULL UNIQUE,
+        family            TEXT NOT NULL,
+        outcome           TEXT NOT NULL,
+        seed              INTEGER NOT NULL,
+        tolerance_version TEXT NOT NULL,
+        replay_json       TEXT NOT NULL,
+        created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_benchmark_replays_family
+        ON benchmark_replays(family);
+
     CREATE TABLE IF NOT EXISTS shor_replay_benchmarks (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         run_id              TEXT NOT NULL,

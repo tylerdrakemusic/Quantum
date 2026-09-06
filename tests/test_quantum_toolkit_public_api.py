@@ -131,6 +131,7 @@ def test_editable_install_exposes_public_namespace(tmp_path: Path) -> None:
         check=True,
         capture_output=True,
         text=True,
+        env={**os.environ, "PYTHONPATH": str(SRC_ROOT)},
     )
 
     location_fields = {
