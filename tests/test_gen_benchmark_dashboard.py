@@ -59,6 +59,20 @@ def test_build_replay_table_labels_modes_and_confidence_interval() -> None:
     assert "0.830–0.940" in html
     assert "depolarizing" in html
 
+
+def test_build_normalized_replay_table_shows_family_status_without_composite_score() -> None:
+    html = module._build_normalized_replay_table([
+        {
+            "run_id": "vqe-1", "family": "vqe", "outcome": "pass",
+            "seed": 4, "tolerance_version": "2026-09-05",
+        },
+    ])
+
+    assert "Normalized Cross-Family Replay" in html
+    assert "vqe" in html
+    assert "2026-09-05" in html
+    assert "composite" not in html.lower()
+
 def test_load_cache_widget_data_sorts_sparkline_points(tmp_path, monkeypatch):
     root = tmp_path / "quantum"
     live_dir = root / "src" / "data" / "liveCache"

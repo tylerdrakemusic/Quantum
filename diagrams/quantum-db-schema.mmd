@@ -43,6 +43,18 @@ erDiagram
         text created_at
     }
 
+    %% --- Normalized cross-family replay results (FR-20260905) ---
+    BENCHMARK_REPLAYS {
+        integer id PK
+        text run_id "UNIQUE"
+        text family "idx_benchmark_replays_family"
+        text outcome
+        integer seed
+        text tolerance_version
+        text replay_json
+        text created_at
+    }
+
     %% --- VQE molecular simulation runs (FR-20260430-vqe-aer-bench) ---
     VQE_RUNS {
         integer id PK

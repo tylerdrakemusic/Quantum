@@ -295,6 +295,38 @@ def _load_replay_runs() -> list[dict]:
         return []
 
 
+def _load_normalized_replay_runs() -> list[dict]:
+    """Load additive cross-family replay records without touching legacy rows."""
+    try:
+        import init_db
+        conn = init_db.get_connection()
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='benchmark_replays'"
+        ).fetchone()
+        if not exists:
+            conn.close()
+            return []
+        rows = conn.execute(
+            "SELECT run_id, family, outcome, seed, tolerance_version, replay_json "
+            "FROM benchmark_replays ORDER BY id DESC"
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "run_id": row[0],
+                "family": row[1],
+                "outcome": row[2],
+                "seed": row[3],
+                "tolerance_version": row[4],
+                "replay": json.loads(row[5] or "{}"),
+            }
+            for row in rows
+        ]
+    except Exception as exc:
+        print(f"[WARN] Could not load benchmark_replays: {exc}")
+        return []
+
+
 def _load_policy_events(policy_id: str = "shors_monthly_benchmark", limit: int = 20) -> list[dict]:
     """Load benchmark policy observability events for a given policy_id."""
     try:
@@ -394,6 +426,30 @@ def _build_replay_table(replay_runs: list[dict]) -> str:
                 high=float(row.get("ci_95_high", 0.0)),
                 seed=_esc(str(row.get("seed", ""))),
                 provenance=_esc(provenance),
+            )
+        )
+    lines.append("</tbody></table>")
+    return "".join(lines)
+
+
+def _build_normalized_replay_table(replay_runs: list[dict]) -> str:
+    """Render cross-family replay status and tolerance provenance."""
+    if not replay_runs:
+        return "<p class='empty'>No normalized cross-family replay data.</p>"
+    lines = [
+        "<h2 class='sim-heading'>Normalized Cross-Family Replay</h2>",
+        "<table class='bench-table'><thead><tr><th>Run</th><th>Family</th>"
+        "<th>Outcome</th><th>Seed</th><th>Tolerance version</th></tr></thead><tbody>",
+    ]
+    for row in replay_runs:
+        lines.append(
+            "<tr><td>{run_id}</td><td>{family}</td><td>{outcome}</td><td>{seed}</td>"
+            "<td>{tolerance_version}</td></tr>".format(
+                run_id=_esc(str(row.get("run_id", ""))),
+                family=_esc(str(row.get("family", ""))),
+                outcome=_esc(str(row.get("outcome", ""))),
+                seed=_esc(str(row.get("seed", ""))),
+                tolerance_version=_esc(str(row.get("tolerance_version", ""))),
             )
         )
     lines.append("</tbody></table>")
@@ -1141,9 +1197,11 @@ def generate_html(
     schedule_policy: dict,
     vqe_runs: list[dict] | None = None,
     replay_runs: list[dict] | None = None,
+    normalized_replay_runs: list[dict] | None = None,
 ) -> str:
     vqe_runs = vqe_runs or []
     replay_runs = replay_runs or []
+    normalized_replay_runs = normalized_replay_runs or []
     last_qpu = qpu_runs[0] if qpu_runs else None
     last_bench = bench_runs[0] if bench_runs else None
     last_ts = (last_qpu["run_date"] if last_qpu else
@@ -1273,6 +1331,8 @@ def generate_html(
 
 {_build_replay_table(replay_runs)}
 
+{_build_normalized_replay_table(normalized_replay_runs)}
+
 <h2 class="qpu-heading">🔬 QPU Runs — Real IBM Quantum Hardware</h2>
 {_build_qpu_table(qpu_runs)}
 
@@ -1385,6 +1445,7 @@ def _regen_dashboard() -> str:
     bench_runs = _load_bench_runs()
     vqe_runs = _load_vqe_runs()
     replay_runs = _load_replay_runs()
+    normalized_replay_runs = _load_normalized_replay_runs()
     shors_events = _load_policy_events("shors_monthly_benchmark")
     shors_schedule = _load_schedule_policy("shors_monthly_benchmark")
     trend = _monthly_trend(qpu_runs)
@@ -1393,6 +1454,7 @@ def _regen_dashboard() -> str:
     html_content = generate_html(
         qpu_runs, bench_runs, trend, generated_at, shors_events, shors_schedule, vqe_runs,
         replay_runs,
+        normalized_replay_runs,
     )
     OUT_PATH.write_text(html_content, encoding="utf-8")
     return html_content

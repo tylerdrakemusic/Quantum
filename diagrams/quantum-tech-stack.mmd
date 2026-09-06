@@ -9,33 +9,28 @@ graph TB
     end
     subgraph Provenance["Versioned benchmark provenance"]
         Adapter[quantum_toolkit.benchmark_provenance<br/>adapt_result]:::quantum
+        Replay[quantum_toolkit.benchmark_replay<br/>seeded replay + compare_metrics]:::quantum
         Manifest[manifest version 1.0<br/>identity · execution · backend<br/>configuration · result]:::state
         Evidence[timestamp + evidence references]:::state
         Legacy[normalize_result<br/>legacy read-time view]:::quantum
+        Tolerance[tolerance version 2026-09-05<br/>family absolute + relative limits]:::state
     end
     subgraph Runtime["Quantum runtime and persistence"]
         Python[Python 3.11]:::quantum
         Qiskit[qiskit · qiskit-aer<br/>qiskit-algorithms]:::quantum
         Chem[qiskit-nature<br/>openfermion]:::quantum
         Numpy[numpy · scipy]:::quantum
+        IBMRuntime[Injected IBM Runtime client<br/>credential-safe capture]:::ext
+        Resubmit[Operator-approved bounded retry<br/>quota + failed-job gate]:::state
         Database[(quantumpsi.db<br/>SQLCipher)]:::db
+        ReplayTable[(benchmark_replays<br/>family index · normalized rows)]:::db
         Dashboard[gen_benchmark_dashboard.py<br/>benchmark_dashboard.html]:::quantum
     end
-    Shor --> Adapter
-    VQE --> Adapter
-    QAOA --> Adapter
-    QEC --> Adapter
-    Kernel --> Adapter
-    Python --> Experiments
-    Python --> Adapter
-    Python --> Qiskit
-    Python --> Chem
-    Python --> Numpy
-    Adapter ==> Manifest
-    Manifest --> Evidence
-    Manifest ==> Database
-    Database --> Dashboard
-    Legacy --> Dashboard
+    Shor --> Adapter; VQE --> Adapter; QAOA --> Adapter; QEC --> Adapter; Kernel --> Adapter
+    Python --> Experiments; Python --> Adapter; Python --> Qiskit; Python --> Chem; Python --> Numpy
+    Adapter ==> Manifest; Manifest --> Evidence; Manifest ==> Database
+    Replay --> Tolerance; Replay --> IBMRuntime --> Resubmit; Replay ==> ReplayTable --> Dashboard
+    Database --> Dashboard; Legacy --> Dashboard
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
 classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
