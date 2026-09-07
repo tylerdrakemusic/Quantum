@@ -866,6 +866,28 @@ def _build_vqe_table(vqe_runs: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _build_vqe_comparison(vqe_runs: list[dict]) -> str:
+    """Render the bounded VQE geometry and ansatz comparison summary."""
+    combinations = sorted({
+        (float(row["bond_length"]), str(row["ansatz"]))
+        for row in vqe_runs
+        if row.get("bond_length") is not None and row.get("ansatz")
+    })
+    if not combinations:
+        return ""
+    rows = [
+        "<h3>Geometry / Ansatz Comparison</h3>",
+        "<table class=\"vqe-comparison\"><thead><tr>"
+        "<th>Geometry (Å)</th><th>Ansatz</th></tr></thead><tbody>",
+    ]
+    rows.extend(
+        f"<tr><td>{geometry:.4f}</td><td>{_esc(ansatz)}</td></tr>"
+        for geometry, ansatz in combinations
+    )
+    rows.append("</tbody></table>")
+    return "\n".join(rows)
+
+
 def _build_bench_table(bench_runs: list[dict]) -> str:
     if not bench_runs:
         return "<p class='empty'>No benchmark data.</p>"
@@ -1213,6 +1235,7 @@ def generate_html(
     sim_runs = [r for r in bench_runs if any(x in r["backend"].lower() for x in ("aer","sim","fake"))]
     vqe_total = len(vqe_runs)
     vqe_chem_acc = sum(1 for r in vqe_runs if r["delta_ha"] is not None and abs(r["delta_ha"]) < 1.6e-3)
+    vqe_comparison = _build_vqe_comparison(vqe_runs)
     
     # Load policies for all three schedules
     shors_events = _load_policy_events("shors_monthly_benchmark")
@@ -1327,6 +1350,7 @@ def generate_html(
 </div>
 
 <h2 class="vqe-heading">🧪 VQE — Molecular Simulation (Aer)</h2>
+{vqe_comparison}
 {_build_vqe_table(vqe_runs)}
 
 {_build_replay_table(replay_runs)}

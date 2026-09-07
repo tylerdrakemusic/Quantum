@@ -73,6 +73,32 @@ def test_build_normalized_replay_table_shows_family_status_without_composite_sco
     assert "2026-09-05" in html
     assert "composite" not in html.lower()
 
+
+def test_generate_html_exposes_vqe_geometry_ansatz_comparison() -> None:
+    html = module.generate_html(
+        [], [], [], "2026-09-06T00:00:00Z", [], {},
+        vqe_runs=[
+            {
+                "id": 1, "timestamp": "2026-09-06T00:00:00", "molecule": "H2",
+                "bond_length": 0.7414, "n_qubits": 2, "n_pauli_terms": 4,
+                "ansatz": "UCCSD", "n_parameters": 3, "optimizer": "SLSQP",
+                "final_energy": -1.137, "fci_reference": -1.137, "delta_ha": 0.0,
+                "n_evals": 4, "wall_clock_sec": 0.1, "backend": "aer_statevector",
+            },
+            {
+                "id": 2, "timestamp": "2026-09-06T00:00:01", "molecule": "LiH",
+                "bond_length": 1.45, "n_qubits": 10, "n_pauli_terms": 100,
+                "ansatz": "EfficientSU2", "n_parameters": 4, "optimizer": "SLSQP",
+                "final_energy": -0.9, "fci_reference": -0.9, "delta_ha": 0.0,
+                "n_evals": 4, "wall_clock_sec": 0.1, "backend": "aer_statevector",
+            },
+        ],
+    )
+
+    assert "Geometry / Ansatz Comparison" in html
+    assert "0.7414" in html
+    assert "EfficientSU2" in html
+
 def test_load_cache_widget_data_sorts_sparkline_points(tmp_path, monkeypatch):
     root = tmp_path / "quantum"
     live_dir = root / "src" / "data" / "liveCache"
