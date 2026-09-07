@@ -8,23 +8,22 @@
 
 ```
 1. Read this file completely
-2. Read TODO_AI.md for current agentic task queue
-3. Read TODO_TYLER.md for pending human actions and blockers
-4. Read PROJECT_PROFILE.json for current project state
-5. Read README.md for architecture context if needed
+2. Read research/algorithm_roadmap.md for provider and algorithm context
+3. Read README.md for architecture context if needed
+4. Read the active FR with f:\⊕Workspace\src\utils\fr_cli.py before acting
 ```
 
 ## 2. Project Location & Key Paths
 
 | Resource | Path |
 |----------|------|
-| **Project Root** | `f:\⟨ψ⟩Quantum\` |
-| **Workspace Root** | `f:\` |
-| **Parent Repo** | `f:\` (private git repo — source controlled) |
+| **Project Root** | repository root (`f:\⟨ψ⟩Quantum\` in the main checkout) |
+| **Workspace Root** | `f:\⊕Workspace\` |
+| **FR Registry** | `f:\⊕Workspace\src\data\fr_ledgers.db`, accessed through `fr_cli.py` |
 | **Python Executable** | `C:\G\python.exe` |
 | **Agent Definitions** | `.github/agents/⟨ψ⟩quantum-*.agent.md` |
 | **Instructions** | `.github/instructions/⟨ψ⟩quantum-*.instructions.md` |
-| **System Specs** | `f:\SYSTEM_SPECS.md` |
+| **Execution Policy** | `src/config/execution_policy.json` |
 
 ### ⟨ψ⟩Quantum Agents (`.github/agents/`)
 
@@ -50,30 +49,37 @@ All ⟨ψ⟩Quantum agents are prefixed `⟨ψ⟩quantum-` and live at `.github/
 - **Tier:** Free (10 minutes/month)
 - **Primary backend:** `ibm_fez` (156-qubit Eagle processor)
 - **Shots per circuit:** 4096
-- **Cache filler:** Scheduled task `QuantumCacheFill_Monthly` runs 1st of each month at 01:00 UTC
-- **Benchmark run:** Scheduled task `ShorsMonthlyBench` runs 1st of each month at 02:00 UTC
+- **Cache filler:** `QuantumCacheFill_Monthly`, day 1 at 07:00 UTC
+- **Shor's benchmark:** `ShorsMonthlyBench`, day 1 at 08:00 UTC
+- **VQE benchmark:** `VQEMonthlyBench`, day 15 at 03:00 UTC
+- **Daily monitors:** `QuantumCacheDepletionGuard_Daily` at 06:00 UTC, `PolicyComplianceAudit_Daily` at 07:00 UTC, and `QuantumBackendAvailabilityMonitor_Daily` at 08:00 UTC
 - **Source of truth:** `src/config/execution_policy.json` (scripts/docs must read this schedule)
 
 ### Backward Compatibility
-Consumer scripts in `f:\` still import via `from quantum_rt import qhoice` etc. Thin shim files at `f:\quantum_rt.py` and `f:\quantum_backend.py` redirect to `⟨ψ⟩Quantum/src/core/`.
+The package-facing API is under `src/quantum_toolkit/`. The compatibility module
+`src/quantum_rt.py` re-exports the public random functions for existing imports.
 
 ## 4. Key Data
 
 | Asset | Path | Notes |
 |-------|------|-------|
-| Quantum bitstring cache | `src/data/ty_string_cache.txt` | ~1M+ bits, symlinked from `executedcode/` |
-| Cache backups | `src/data/qbackups/` | Timestamped snapshots before each refill |
+| Quantum bitstring cache | `src/data/liveCache/ty_string_cache.txt` | Configured/runtime location; ignored and may be absent in a clean checkout |
+| Cache backups | `qbackups/` | Root-level, ignored, operator-managed timestamped snapshots before each refill |
+| Cache verification | `C:\G\python.exe tools\verify_cache.py` | Read-only integrity check |
+| Cache fallback | `secrets` CSPRNG | Used when the configured cache is absent, rejected, or exhausted; verification reports unavailable when absent |
 | Shor's V2 perf data | `research/shors_v2_performance.tsv` | Factorization benchmarks |
 
-## 5. Current State (2026-04-17)
+## 5. Safety and Collaboration
 
-- **Phase 0 complete** — project extracted, shims in place, cache operational
-- **Phase 1 complete** — champion-challenger architecture, ProviderTier enum, Qiskit Aer integrated
-- **Phase 2 QAOA complete** — `QAOASolver` + `QAOASolverQPU` in `src/core/qaoa.py`
-  - Integration adapters moved to domain-owner projects per scope rules:
-    - `setlist_optimizer.py` → `❤Music/src/integrations/` (data owner: ❤Music)
-    - `supplement_scheduler.py` → `∞Life/src/integrations/` (data owner: ∞Life)
-  - Both adapters import `core.qaoa` via `sys.path` bridge
-- **Phase 2 pending** — VQE, quantum walk music gen, quantum kernel SVM, QEC, Aer noise models
-- Cache at 1M+ quantum bits; monthly fill on schedule (1st of month, 2AM)
-- symlink N/A on exFAT — path resolution works directly
+- IBM credentials are the `IBM_CLOUD_API_KEY` and `IBM_QUANTUM_INSTANCE`
+  environment variables. Never log, expose, or hardcode them.
+- Never delete or truncate the live cache without a backup. `tools/fill_cache.py`
+  creates a timestamped backup before replacement.
+- Never run a cache fill while another fill is active. Respect the 10-minute
+  monthly IBM Quantum quota.
+- Each FR uses one branch and one worktree per repository. Use the shared
+  `feature/<FR-ID>`, `fix/<FR-ID>`, or `chore/<FR-ID>` naming convention,
+  route branch operations through `⊕workspace-ci`, and never push directly to
+  `main`.
+- Before acting, read the FR with `C:\G\python.exe f:\⊕Workspace\src\utils\fr_cli.py get <FR-ID>`.
+- After acting, record one FR event with `fr_cli.py record-event`.

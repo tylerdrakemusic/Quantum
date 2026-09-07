@@ -13,6 +13,7 @@ Shared context, conventions, and rules for all `⟨ψ⟩quantum-*` agents.
 Before doing any work, load context in this order:
 1. `AGENT_STARTUP.md` — current project state
 2. `research/algorithm_roadmap.md` — project and provider context
+3. Read the active FR with `f:\⊕Workspace\src\utils\fr_cli.py get <FR-ID>`
 
 ---
 
@@ -29,9 +30,11 @@ Before doing any work, load context in this order:
 
 | Resource | Path |
 |----------|------|
-| Project root | repository root |
-| Core modules | `src/quantum_rt.py`, `src/quantum_backend.py` |
-| Cache file | `src/data/liveCache/ty_string_cache.txt` and `qbackups/` |
+| Project root | repository root (`f:\⟨ψ⟩Quantum\` in the main checkout) |
+| Package API | `src/quantum_toolkit/` |
+| Compatibility API | `src/quantum_rt.py` |
+| Cache file | Configured/runtime `src/data/liveCache/ty_string_cache.txt`; root-level `qbackups/` backups |
+| Execution policy | `src/config/execution_policy.json` |
 | Research | `research/` |
 | Tools | `tools/` |
 
@@ -44,7 +47,10 @@ Before doing any work, load context in this order:
 - Python 3.11+ with type hints on all function signatures
 - Run scripts from the repository root: `C:\G\python.exe <script>`
 - IBM Quantum credentials come from `IBM_CLOUD_API_KEY` and `IBM_QUANTUM_INSTANCE` environment variables; treat them as secrets, do not log or expose
-- Cache file is shared across projects via symlink — do NOT delete or overwrite without backup
+- Cache verification: `C:\G\python.exe tools\verify_cache.py`
+- The live cache is ignored and operator-managed, so it may be absent in a clean checkout; verification reports unavailable in that state
+- If the live cache is absent, rejected, or exhausted, the runtime uses the `secrets` OS CSPRNG fallback
+- Cache file is shared across projects — do NOT delete or overwrite without backup
 - Always back up cache before destructive operations: `tools/fill_cache.py` does this automatically
 
 ---
@@ -56,8 +62,7 @@ Before doing any work, load context in this order:
 | Research notes | `research/` as markdown or Python scripts |
 | Performance data | `research/` as `.tsv` files |
 | Documentation | `docs/` |
-| Tyler action items | `TODO_TYLER.md` |
-| Agent task queue | `TODO_AI.md` |
+| FR state and events | `f:\⊕Workspace\src\data\fr_ledgers.db` via `fr_cli.py` |
 
 ---
 
@@ -67,6 +72,18 @@ Before doing any work, load context in this order:
 - **NEVER expose IBM Quantum API tokens** in logs, output, or research files
 - **NEVER run cache fill when another fill is in progress** — check for running Python processes first
 - **Respect the 10-min monthly quota** — one fill per month is the target cadence
+- **Follow the shared FR/branch protocol** — one FR, branch, worktree, and draft PR per repository; no direct pushes to `main`; branch operations go through `⊕workspace-ci`
+
+## Execution Schedule
+
+All times are UTC and must match `src/config/execution_policy.json`:
+
+- `QuantumCacheFill_Monthly`: day 1 at 07:00
+- `ShorsMonthlyBench`: day 1 at 08:00
+- `VQEMonthlyBench`: day 15 at 03:00
+- `QuantumCacheDepletionGuard_Daily`: daily at 06:00
+- `PolicyComplianceAudit_Daily`: daily at 07:00
+- `QuantumBackendAvailabilityMonitor_Daily`: daily at 08:00
 
 ---
 
