@@ -170,4 +170,4 @@ def persist_replay(conn: Any, replay: Mapping[str, Any], *, run_id: str) -> int:
         ),
     )
     conn.commit()
-    return int(cursor.lastrowid)
+    return int(getattr(cursor, "lastrowid", 0) or 0)

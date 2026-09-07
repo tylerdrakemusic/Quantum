@@ -169,6 +169,34 @@ def test_run_all_molecules_qpu_builds_estimator_and_passes_through(
     assert any_job_failed is False
 
 
+def test_run_all_molecules_forwards_ansatz_and_seed(monkeypatch, quantum_db_env) -> None:
+    """Guarded runs preserve the selected ansatz and deterministic replay seed."""
+    received: list[dict] = []
+
+    def fake_run_vqe(molecule: str, backend_label: str = "aer_statevector", **kwargs) -> dict:
+        received.append({"molecule": molecule, "backend_label": backend_label, **kwargs})
+        return {
+            "molecule": molecule, "n_qubits": 2, "n_pauli_terms": 4, "n_params": 2,
+            "final_energy": -1.0, "fci_reference": -1.0, "delta_fci": 0.0,
+            "delta_target": 0.0, "ac_window": 1.6e-3, "ac_met": True,
+            "evals": 5, "wall_sec": 1.0, "backend": backend_label,
+            "timestamp": "2026-09-06T00:00:00",
+        }
+
+    monkeypatch.setattr(rvb, "_bench_vqe_run_vqe", fake_run_vqe)
+    monkeypatch.setattr(rvb, "log_policy_event", lambda **_kwargs: None)
+
+    results, any_job_failed = rvb.run_all_molecules(
+        ["h2"], backend_label="aer_statevector", max_qpu_seconds=600,
+        ansatz_name="EfficientSU2", seed=17,
+    )
+
+    assert len(results) == 1
+    assert received[0]["ansatz_name"] == "EfficientSU2"
+    assert received[0]["seed"] == 17
+    assert any_job_failed is False
+
+
 def test_run_all_molecules_wired_through_retry_supervisor_records_status(
     monkeypatch: pytest.MonkeyPatch, quantum_db_env,
 ) -> None:

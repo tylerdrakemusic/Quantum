@@ -237,6 +237,7 @@ def resolve_backend_choice(
 
 def run_all_molecules(
     molecules: list[str], backend_label: str, max_qpu_seconds: int,
+    ansatz_name: str = "UCCSD", seed: int = 20260906,
 ) -> tuple[list[dict], bool]:
     """Run each molecule via bench_vqe.run_vqe(), aborting if the hard wall-clock
     cap would be exceeded before starting the next molecule.
@@ -286,6 +287,7 @@ def run_all_molecules(
             outcome["result"] = _bench_vqe_run_vqe(
                 molecule, backend_label=backend_label,
                 estimator=estimator, qpu_backend=qpu_backend,
+                ansatz_name=ansatz_name, seed=seed,
             )
 
         supervisor.enqueue(Job(job_id=job_id, backend=supervisor_backend, run_fn=_run_fn))
@@ -331,6 +333,8 @@ def _parse_args() -> argparse.Namespace:
         description="Monthly VQE QPU benchmark runner."
     )
     parser.add_argument("--molecule", choices=["h2", "lih", "all"], default="all")
+    parser.add_argument("--ansatz", choices=["UCCSD", "EfficientSU2"], default="UCCSD")
+    parser.add_argument("--seed", type=int, default=20260906)
     parser.add_argument(
         "--backend", choices=["aer", "qpu"], default="aer",
         help="Evaluation backend (default: aer statevector). 'qpu' is budget-checked "
@@ -396,6 +400,7 @@ def main() -> None:
     try:
         results, any_job_failed = run_all_molecules(
             molecules, backend_label=backend_label, max_qpu_seconds=args.max_qpu_seconds,
+            ansatz_name=args.ansatz, seed=args.seed,
         )
     except Exception as exc:
         _log.error("Benchmark run failed: %s", exc)

@@ -38,6 +38,7 @@ import numpy as np
 import scipy.optimize as spopt
 from openfermion.chem import MolecularData
 
+from qiskit.circuit.library import EfficientSU2
 from qiskit.quantum_info import Statevector
 from qiskit_nature.second_q.circuit.library import HartreeFock, UCCSD
 from qiskit_nature.second_q.hamiltonians import ElectronicEnergy
@@ -51,8 +52,11 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from init_db import get_connection, init_db  # noqa: E402
 from quantum_toolkit.benchmark_provenance import adapt_result, persist_manifest  # noqa: E402
+from quantum_toolkit.benchmark_replay import persist_replay, replay_local  # noqa: E402
 
 MOL_DIR = PROJECT_ROOT / "src" / "data" / "molecules"
+SUPPORTED_ANSATZES = ("UCCSD", "EfficientSU2")
+DEFAULT_REPLAY_SEED = 20260906
 
 MOLECULES: dict[str, dict] = {
     "h2": {
@@ -74,8 +78,25 @@ MOLECULES: dict[str, dict] = {
 }
 
 
+def _build_ansatz(ansatz_name: str, n_qubits: int, initial_state=None):
+    """Build one of the bounded local ansatz options."""
+    if ansatz_name == "UCCSD":
+        raise ValueError("UCCSD requires the molecular problem context")
+    if ansatz_name == "EfficientSU2":
+        return EfficientSU2(
+            num_qubits=n_qubits,
+            su2_gates=["ry", "rz"],
+            entanglement="linear",
+            reps=1,
+            insert_barriers=False,
+        )
+    raise ValueError(f"unsupported ansatz: {ansatz_name}")
+
+
 def _build_problem(fixture_name: str):
     """Load HDF5 fixture and return (qubit_op, problem, nuclear_repulsion, fci_total)."""
+    if not fixture_name:
+        raise RuntimeError("A genuine geometry-specific molecular fixture is required")
     m = MolecularData(filename=str(MOL_DIR / fixture_name))
     m.load()
     h1 = np.asarray(m.one_body_integrals)
@@ -95,6 +116,8 @@ def run_vqe(
     backend_label: str = "aer_statevector",
     estimator=None,
     qpu_backend=None,
+    ansatz_name: str = "UCCSD",
+    seed: int = DEFAULT_REPLAY_SEED,
 ) -> dict:
     """Run VQE on one molecule and return result dict.
 
@@ -106,14 +129,17 @@ def run_vqe(
     cfg = MOLECULES[molecule]
     print("=" * 64)
     print(f"  VQE BENCHMARK -- {cfg['label']} (R={cfg['bond_length']} A)")
-    print(f"  Backend: {backend_label}  Mapper: ParityMapper  Ansatz: UCCSD")
+    print(f"  Backend: {backend_label}  Mapper: ParityMapper  Ansatz: {ansatz_name}")
     print("=" * 64)
 
     qop, problem, mapper, nuc, fci_total = _build_problem(cfg["fixture"])
     print(f"  qubits={qop.num_qubits}  pauli_terms={len(qop)}  FCI={fci_total:.6f}")
 
     hf = HartreeFock(problem.num_spatial_orbitals, problem.num_particles, mapper)
-    ans = UCCSD(problem.num_spatial_orbitals, problem.num_particles, mapper, initial_state=hf)
+    if ansatz_name == "UCCSD":
+        ans = UCCSD(problem.num_spatial_orbitals, problem.num_particles, mapper, initial_state=hf)
+    else:
+        ans = _build_ansatz(ansatz_name, qop.num_qubits, initial_state=hf)
     # Decompose so Statevector evaluation has primitive gates only
     ans = ans.decompose().decompose()
     params = list(ans.parameters)
@@ -188,12 +214,18 @@ def run_vqe(
         "evals":         eval_count[0],
         "wall_sec":      wall,
         "backend":       backend_label,
+        "ansatz":        ansatz_name,
+        "seed":          seed,
         "timestamp":     ts,
     }
     result["provenance"] = adapt_result(
         "vqe", result, run_id=f"vqe-{molecule}-{ts}",
         backend_name=backend_label,
-        configuration={"molecule": molecule, "ansatz": "UCCSD", "optimizer": "SLSQP"},
+        configuration={
+            "molecule": molecule, "geometry_angstrom": cfg["bond_length"],
+            "ansatz": ansatz_name, "optimizer": "SLSQP", "seed": seed,
+            "maxiter": cfg["maxiter"],
+        },
     )
 
     # Persist the legacy-shaped row and its additive versioned manifest together.
@@ -208,26 +240,34 @@ def run_vqe(
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             ts[:10], cfg["label"], cfg["bond_length"], qop.num_qubits, len(qop),
-            "UCCSD", n_params, "SLSQP",
+            ansatz_name, n_params, "SLSQP",
             round(final_total, 8), round(fci_total, 8), round(delta_fci, 8),
             eval_count[0], round(wall, 3), backend_label, ts,
         ),
     )
     persist_manifest(conn, result["provenance"])
+    replay = replay_local(
+        "vqe", seed=seed,
+        execute=lambda _seed: {"status": "pass", "energy": final_total, "ansatz": ansatz_name},
+    )
+    persist_replay(conn, replay, run_id=f"{result['provenance']['identity']['run_id']}-replay")
     conn.close()
     print(f"  Rows inserted into quantumpsi.db vqe_runs and benchmark_provenance")
     return result
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="VQE benchmark runner (H2, LiH on Aer).")
+    parser = argparse.ArgumentParser(description="VQE benchmark runner (bounded local Aer by default).")
     parser.add_argument("--molecule", choices=["h2", "lih", "all"], default="all")
+    parser.add_argument("--ansatz", choices=["UCCSD", "EfficientSU2", "all"], default="UCCSD")
+    parser.add_argument("--seed", type=int, default=DEFAULT_REPLAY_SEED)
     parser.add_argument("--no-dashboard", action="store_true",
                         help="Skip auto-regeneration of the benchmark dashboard.")
     args = parser.parse_args()
 
     targets = ["h2", "lih"] if args.molecule == "all" else [args.molecule]
-    results = [run_vqe(t) for t in targets]
+    ansatzes = list(SUPPORTED_ANSATZES) if args.ansatz == "all" else [args.ansatz]
+    results = [run_vqe(t, ansatz_name=a, seed=args.seed) for t in targets for a in ansatzes]
 
     print("\n" + "=" * 64)
     print("  VQE BENCH SUMMARY")
