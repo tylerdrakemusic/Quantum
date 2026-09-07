@@ -9,19 +9,17 @@ Tyler James Drake's quantum computing project. Provides quantum random number ge
 ```
 ⟨ψ⟩Quantum/
 ├── src/
-│   ├── core/
-│   │   ├── quantum_rt.py        # Quantum random library (qRandom, qhoice, quuffle, etc.)
-│   │   ├── quantum_backend.py   # IBM Quantum + Aer backend manager (champion-challenger)
-│   │   ├── quantum_t.py         # Quantum text/creative utilities
-│   │   ├── qaoa.py              # QAOA solver (QAOASolver + QAOASolverQPU, MaxCut, scheduling)
-│   │   └── __init__.py
+│   ├── quantum_toolkit/         # Stable public random API
+│   ├── quantum_rt.py            # Compatibility random API
 │   ├── data/
-│   │   ├── ty_string_cache.txt  # Live quantum bitstring cache
-│   │   └── qbackups/            # Timestamped cache backups
+│   │   └── liveCache/           # Optional ignored runtime cache location
+│   ├── config/
+│   │   └── execution_policy.json # Schedule and QPU budget source of truth
 │   └── utils/
 │       └── __init__.py
 ├── tools/
-│   └── fill_cache.py            # Monthly quota filler (IBM 10-min/month)
+│   ├── fill_cache.py            # Monthly quota filler (IBM 10-min/month)
+│   └── verify_cache.py          # Read-only cache integrity check
 ├── research/
 │   ├── shors.py                 # Shor's algorithm — integer factorization via QPE
 │   ├── shors_v2.py              # Shor's V2 — enhanced with concurrency & OOP
@@ -38,9 +36,6 @@ Tyler James Drake's quantum computing project. Provides quantum random number ge
 │   ├── quantum-derived-cache-integrity.mmd
 │   └── quantum-tech-stack.mmd
 ├── AGENT_STARTUP.md             # Agent context bootstrap
-├── PROJECT_PROFILE.json         # Project configuration
-├── TODO_AI.md                   # Agent task queue
-├── TODO_TYLER.md                # Human action items
 └── README.md
 ```
 
@@ -90,26 +85,25 @@ through the 0.x compatibility period and is not the source of new API.
 
 ## Data Pipeline
 
-- **IBM Quantum** → `fill_cache.py` → `ty_string_cache.txt` → consumed by `qRandomBitstring()`
-- Monthly scheduled tasks (UTC, policy-defined in `src/config/execution_policy.json`):
-  - `QuantumCacheFill_Monthly` (1st of month, 01:00)
-  - `ShorsMonthlyBench` (1st of month, 02:00)
+- **IBM Quantum** → `tools/fill_cache.py` → `src/data/liveCache/ty_string_cache.txt` → consumed by `qRandomBitstring()`
+- Cache backups are written to the root-level, ignored, operator-managed `qbackups/` directory before replacement.
+- Verify the live cache with `C:\G\python.exe tools\verify_cache.py`.
+- A clean checkout may not contain the configured runtime cache; verification then reports unavailable and the runtime uses the `secrets` OS CSPRNG fallback.
+- Scheduled operations (UTC, policy-defined in `src/config/execution_policy.json`):
+  - `QuantumCacheFill_Monthly` (day 1, 07:00)
+  - `ShorsMonthlyBench` (day 1, 08:00)
+  - `VQEMonthlyBench` (day 15, 03:00)
+  - `QuantumCacheDepletionGuard_Daily` (daily, 06:00)
+  - `PolicyComplianceAudit_Daily` (daily, 07:00)
+  - `QuantumBackendAvailabilityMonitor_Daily` (daily, 08:00)
 - 10-minute monthly quota on IBM Quantum (free tier)
 - Backend: `ibm_fez` (156-qubit Eagle processor)
-- Falls back to classical random when cache is depleted
+- Falls back to the `secrets` OS CSPRNG when the cache is absent, rejected, or exhausted
 
 ## Consumers
 
-These scripts in `executedcode/` import from `quantum_rt`:
-- `$$!!cleanUpDirSizes.py`
-- `$$~~$$tyja.py`
-- `$$~~$$TycloneBackup.py`
-- `$$~~TyClone$$.py`
-- `.py` (bookshelf manager)
-- `Open Spotify.py`
-- `quantum_sampler.py`
-- `QuantumNoiseGate.py`
-- `quantumLifeEnhancer.py`
+Existing consumers can use the `src/quantum_rt.py` compatibility module. New
+code should import the public API from `src/quantum_toolkit/`.
 
 ## Future Use Cases
 
