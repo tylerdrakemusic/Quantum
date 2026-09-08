@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
+import sqlite3
+import tomllib
 
 import pytest
 
@@ -132,6 +135,24 @@ def test_fly_config_uses_production_wsgi_and_worker_only_secret_contract():
     assert "worker" in fly_config
 
 
+def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume():
+    fly_config = tomllib.loads(Path("fly.toml").read_text(encoding="utf-8"))
+    policy = json.loads(Path("fly.api-policy.json").read_text(encoding="utf-8"))
+    deploy_script = Path("tools/deploy_randomness_service.ps1").read_text(encoding="utf-8")
+    mounts = {mount["source"]: mount["destination"] for mount in fly_config["mounts"]}
+
+    assert policy == {
+        "app": "quantum-randomness",
+        "machine_count": 1,
+        "shared_consumption_path": "/data/verified/consumption.sqlite3",
+        "volume_source": "quantum_randomness_data",
+    }
+    assert mounts[policy["volume_source"]] == "/data"
+    assert policy["shared_consumption_path"].startswith(mounts[policy["volume_source"]] + "/")
+    assert "fly scale count 1" in deploy_script
+    assert "fly deploy --config fly.toml" in deploy_script
+
+
 def test_pyproject_discovers_service_package_and_declares_runtime_dependencies():
     metadata = Path("pyproject.toml").read_text(encoding="utf-8")
     assert "quantum_randomness_service*" in metadata
@@ -142,6 +163,14 @@ def test_pyproject_discovers_service_package_and_declares_runtime_dependencies()
 def test_docker_build_context_includes_declared_project_metadata():
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
     assert "COPY README.md LICENSE ./" in dockerfile
+
+
+def test_randomness_service_diagram_shows_sqlite_consumption_inside_persistent_boundary():
+    diagram = Path("diagrams/quantum-randomness-service.mmd").read_text(encoding="utf-8")
+
+    assert "consumption.sqlite3" in diagram
+    assert "quantum_randomness_data" in diagram
+    assert "persistent volume" in diagram.lower()
 
 
 def test_stale_verified_cache_is_reported_as_stale(tmp_path):
@@ -169,6 +198,25 @@ def test_stale_verified_cache_never_supplies_entropy_bytes(tmp_path, monkeypatch
 
     assert value == b"\xA5" * 8
     assert provenance == {"source": "os_csprng", "quantum_cache": "stale"}
+
+
+def test_cache_io_failure_returns_csprng_bytes_with_unavailable_provenance(tmp_path, monkeypatch):
+    store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    store.publish(["00000001"], generated_at="2026-09-08T00:00:00Z")
+    monkeypatch.setattr(
+        store,
+        "consume_bytes",
+        lambda length: (_ for _ in ()).throw(sqlite3.OperationalError("ledger unavailable")),
+    )
+    monkeypatch.setattr(
+        "quantum_randomness_service.provider.secrets.token_bytes",
+        lambda length: b"\xA5" * length,
+    )
+
+    value, provenance = random_bytes(1, store)
+
+    assert value == b"\xA5"
+    assert provenance == {"source": "os_csprng", "quantum_cache": "unavailable"}
 
 
 def test_fresh_verified_generation_is_consumed_sequentially(tmp_path):

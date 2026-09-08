@@ -181,5 +181,6 @@ def random_bytes(length: int, store: VerifiedCacheStore | None = None) -> tuple[
             if consumed is not None:
                 return consumed
         except (ManifestError, OSError, sqlite3.Error):
-            pass
-    return secrets.token_bytes(length), store.status() if store else {"source": "os_csprng", "quantum_cache": "unavailable"}
+            return secrets.token_bytes(length), {"source": "os_csprng", "quantum_cache": "unavailable"}
+        return secrets.token_bytes(length), store.status()
+    return secrets.token_bytes(length), {"source": "os_csprng", "quantum_cache": "unavailable"}

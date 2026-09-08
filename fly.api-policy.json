@@ -1,0 +1,6 @@
+{
+  "app": "quantum-randomness",
+  "machine_count": 1,
+  "shared_consumption_path": "/data/verified/consumption.sqlite3",
+  "volume_source": "quantum_randomness_data"
+}

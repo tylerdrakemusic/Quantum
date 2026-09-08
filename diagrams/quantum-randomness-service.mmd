@@ -10,7 +10,10 @@ graph TB
         Flask[quantum_randomness_service.app:create_app<br/>/v1 bytes · bits · ints · bool]:::quantum
         Auth[Constant-time bearer auth<br/>rate limits and request bounds]:::state
         Refresh[Refresh worker-published manifest<br/>verify HMAC-SHA256 signature]:::quantum
-        Retained[Atomically retained local<br/>verified-generation.json]:::db
+        subgraph Volume["Persistent volume · quantum_randomness_data mounted at /data"]
+            Retained[Atomically retained local<br/>verified-generation.json]:::db
+            Consumption[consumption.sqlite3<br/>shared reservation ledger]:::db
+        end
         APIStatus[Public status<br/>current · stale · unavailable]:::state
     end
 
@@ -35,6 +38,8 @@ graph TB
     Auth --> Refresh
     Refresh --> Tigris
     Refresh --> Retained
+    Flask --> Consumption
+    Consumption -.->|"BEGIN IMMEDIATE reserves unique byte ranges"| Flask
     Retained --> APIStatus
     Flask --> APIStatus
     Refresh --> Quantum
