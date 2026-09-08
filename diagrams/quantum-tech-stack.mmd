@@ -10,8 +10,7 @@ graph TB
     subgraph Provenance["Versioned benchmark provenance"]
         Adapter[quantum_toolkit.benchmark_provenance<br/>adapt_result]:::quantum
         Replay[quantum_toolkit.benchmark_replay<br/>seeded replay + compare_metrics]:::quantum
-        Manifest[manifest version 1.0<br/>identity · execution · backend<br/>configuration · result]:::state
-        Evidence[timestamp + evidence references]:::state
+        Manifest[manifest version 1.0<br/>identity · execution · backend<br/>configuration · result<br/>timestamp + evidence references]:::state
         Legacy[normalize_result<br/>legacy read-time view]:::quantum
         Tolerance[tolerance version 2026-09-05<br/>family absolute + relative limits]:::state
     end
@@ -27,21 +26,18 @@ graph TB
         Dashboard[gen_benchmark_dashboard.py<br/>benchmark_dashboard.html]:::quantum
     end
     subgraph Distribution["Package build and isolated CI consumption"]
-        PackageBuild[/python -m build<br/>sdist + wheel/]:::quantum
-        Distributions[dist/*.whl + dist/*.tar.gz]:::state
+        PackageBuild[/python -m build<br/>sdist + wheel<br/>dist/*.whl + dist/*.tar.gz/]:::quantum
         ContentCheck[/check_package_contents.py<br/>required + forbidden paths/]:::quantum
         ConsumerVenv[isolated consumer venv<br/>--no-index --find-links dist]:::state
-        ApiSmoke[/package_smoke.py<br/>public API + compatibility smoke/]:::quantum
-        ValidationReports[validation reports + uploaded artifacts]:::state
+        ApiSmoke[/package_smoke.py<br/>public API + compatibility smoke<br/>validation reports + uploaded artifacts/]:::quantum
     end
     Shor --> Adapter; VQE --> Adapter; QAOA --> Adapter; QEC --> Adapter; Kernel --> Adapter
     Python --> Experiments; Python --> Adapter; Python --> Qiskit; Python --> Chem; Python --> Numpy
     Python --> PackageBuild
-    PackageBuild ==> Distributions
-    Distributions --> ContentCheck
-    Distributions ==> ConsumerVenv
-    ConsumerVenv --> ApiSmoke --> ValidationReports
-    Adapter ==> Manifest; Manifest --> Evidence; Manifest ==> Database
+    PackageBuild --> ContentCheck
+    PackageBuild ==> ConsumerVenv
+    ConsumerVenv --> ApiSmoke
+    Adapter ==> Manifest; Manifest ==> Database
     Replay --> Tolerance; Replay --> IBMRuntime --> Resubmit; Replay ==> ReplayTable --> Dashboard
     Database --> Dashboard; Legacy --> Dashboard
 
