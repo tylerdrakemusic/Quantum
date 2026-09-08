@@ -188,6 +188,27 @@ def test_fresh_verified_generation_is_consumed_sequentially(tmp_path):
     assert first_provenance["quantum_cache"] == second_provenance["quantum_cache"] == "current"
 
 
+def test_fresh_verified_generation_coordinates_consumption_across_store_instances(tmp_path):
+    publisher = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    publisher.publish(
+        ["00000001", "00000010"],
+        generated_at="2026-09-08T00:00:00Z",
+    )
+    first_worker = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    second_worker = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+
+    first, first_provenance = random_bytes(1, first_worker)
+    second, second_provenance = random_bytes(1, second_worker)
+
+    assert first == b"\x01"
+    assert second == b"\x02"
+    assert first != second
+    assert first_provenance == second_provenance == {
+        "source": "quantum",
+        "quantum_cache": "current",
+    }
+
+
 def test_worker_refills_at_or_below_twenty_five_percent():
     assert refill_needed(24, 100)
     assert refill_needed(25, 100)

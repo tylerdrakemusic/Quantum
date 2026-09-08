@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import secrets
+import sqlite3
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -38,9 +39,8 @@ class VerifiedCacheStore:
         self.signing_key = signing_key
         self.max_age = timedelta(days=max_age_days)
         self.path = self.directory / "verified-generation.json"
+        self.consumption_path = self.directory / "consumption.sqlite3"
         self._consumption_lock = threading.RLock()
-        self._consumed_generation: str | None = None
-        self._consumed_offset = 0
 
     def _signature(self, manifest: dict[str, Any]) -> str:
         unsigned = {key: value for key, value in manifest.items() if key != "signature"}
@@ -83,9 +83,6 @@ class VerifiedCacheStore:
                 except FileNotFoundError:
                     pass
                 raise
-            if manifest["generation"] != self._consumed_generation:
-                self._consumed_generation = manifest["generation"]
-                self._consumed_offset = 0
 
     def _validate_manifest(self, manifest: dict[str, Any]) -> None:
         if not hmac.compare_digest(str(manifest.get("signature", "")), self._signature(manifest)):
@@ -149,15 +146,31 @@ class VerifiedCacheStore:
             }
             if not fresh:
                 return None
-            if generation.generation != self._consumed_generation:
-                self._consumed_generation = generation.generation
-                self._consumed_offset = 0
             needed = length * 8
-            end = self._consumed_offset + needed
-            if end > len(generation.bits):
-                return None
-            bits = generation.bits[self._consumed_offset:end]
-            self._consumed_offset = end
+            self.directory.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(self.consumption_path, timeout=30.0) as connection:
+                connection.execute("PRAGMA busy_timeout = 30000")
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS consumption "
+                    "(generation TEXT PRIMARY KEY, offset INTEGER NOT NULL)"
+                )
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute(
+                    "SELECT offset FROM consumption WHERE generation = ?",
+                    (generation.generation,),
+                ).fetchone()
+                offset = int(row[0]) if row else 0
+                end = offset + needed
+                if end > len(generation.bits):
+                    connection.rollback()
+                    return None
+                connection.execute(
+                    "INSERT INTO consumption(generation, offset) VALUES (?, ?) "
+                    "ON CONFLICT(generation) DO UPDATE SET offset = excluded.offset",
+                    (generation.generation, end),
+                )
+                connection.commit()
+            bits = generation.bits[offset:end]
             return int(bits, 2).to_bytes(length, "big"), provenance
 
 
@@ -167,6 +180,6 @@ def random_bytes(length: int, store: VerifiedCacheStore | None = None) -> tuple[
             consumed = store.consume_bytes(length)
             if consumed is not None:
                 return consumed
-        except ManifestError:
+        except (ManifestError, OSError, sqlite3.Error):
             pass
     return secrets.token_bytes(length), store.status() if store else {"source": "os_csprng", "quantum_cache": "unavailable"}
