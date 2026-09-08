@@ -35,12 +35,12 @@ Fresh bytes are reserved through `consumption.sqlite3` in the same mounted
 `QUANTUM_CACHE_DIR` as `verified-generation.json`. Each request reserves its
 range in a SQLite `BEGIN IMMEDIATE` transaction keyed by generation, so
 independently running Gunicorn workers cannot return the same fresh range.
-SQLite or cache I/O failure preserves the existing OS-CSPRNG fallback and
-provenance contract. The API deployment is intentionally one Fly Machine with
-the `quantum_randomness_data` volume attached; do not scale the API app across
-machines unless the reservation ledger is moved to a shared transactional
-store. The separate refill worker uses its own volume and never serves API
-bytes.
+The API and refill worker both mount the `quantum_randomness_data` boundary at
+`/data`, so the worker's threshold calculation observes the API's reservations
+instead of creating a second ledger. SQLite or cache I/O failure preserves the
+existing OS-CSPRNG fallback and provenance contract. Keep the API at one Fly
+Machine with `fly scale count 1`; do not scale either app across machines unless
+the reservation ledger is moved to a shared transactional store.
 
 The worker requests a refill when remaining bits are at or below 25 percent of
 capacity. IBM credentials remain environment variables and are not part of the
@@ -62,10 +62,11 @@ Set the IBM and Tigris credentials only on the worker with `fly secrets set
 --app quantum-randomness-worker ...`; do not set them on the API app. Set the
 same `QUANTUM_MANIFEST_SIGNING_KEY` on both apps, or export it in the operator
 environment and run `tools/deploy_randomness_service.ps1`, which forwards it to
-both Fly apps without storing the value in source. Keep the API at one machine
-with `fly scale count 1 --app quantum-randomness`, then deploy it with `fly
-deploy --config fly.toml`; deploy the worker with `fly deploy --config
-fly.worker.toml`.
+both Fly apps without storing the value in source. Deployment order is
+intentional: scale the API to one machine, deploy `fly.toml` first so the
+`quantum_randomness_data` volume and API ledger exist, then deploy
+`fly.worker.toml` with the same volume source. The worker starts only after the
+API boundary is ready and never serves API bytes.
 
 `boto3` is used only by the worker adapter. A refill is generated and signed,
 uploaded to the pending object, promoted to the stable key, and only then

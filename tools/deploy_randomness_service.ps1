@@ -29,3 +29,8 @@ fly deploy --config fly.toml --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "fly deploy failed"
 }
+
+fly deploy --config fly.worker.toml --app quantum-randomness-worker
+if ($LASTEXITCODE -ne 0) {
+    throw "worker fly deploy failed"
+}

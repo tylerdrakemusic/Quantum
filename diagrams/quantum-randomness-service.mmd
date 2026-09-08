@@ -17,7 +17,7 @@ graph TB
         APIStatus[Public status<br/>current · stale · unavailable]:::state
     end
 
-    subgraph Worker["Separate Fly.io refill worker · quantum-randomness-worker"]
+    subgraph Worker["Separate Fly.io refill worker · quantum-randomness-worker · shared quantum_randomness_data at /data"]
         Schedule[Monthly policy schedule<br/>day 1 · 07:00 UTC]:::state
         Refill[Threshold-gated refill<br/>remaining bits <= 25 percent]:::quantum
         IBM{{IBM Quantum provider<br/>measured Hadamard bits}}:::ext
@@ -59,6 +59,7 @@ graph TB
     Sign ==> Publish
     Publish --> Tigris
     Publish --> Retained
+    Worker -.->|"same persistent boundary; reads shared consumption.sqlite3"| Consumption
     Retained -.->|"previous verified generation remains on fetch or publish failure"| Refresh
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8

@@ -8,7 +8,7 @@ primary_region = "iad"
   QUANTUM_CACHE_DIR = "/data/verified"
 
 [[mounts]]
-  source = "quantum_randomness_worker_data"
+  source = "quantum_randomness_data"
   destination = "/data"
 
 [processes]

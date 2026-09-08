@@ -85,6 +85,14 @@ class VerifiedCacheStore:
                 raise
 
     def _validate_manifest(self, manifest: dict[str, Any]) -> None:
+        if not isinstance(manifest, dict):
+            raise ManifestError("manifest structure invalid")
+        if not isinstance(manifest.get("generation"), str):
+            raise ManifestError("manifest generation invalid")
+        if not isinstance(manifest.get("bits"), str):
+            raise ManifestError("manifest bits invalid")
+        if not isinstance(manifest.get("generated_at"), str):
+            raise ManifestError("manifest timestamp invalid")
         if not hmac.compare_digest(str(manifest.get("signature", "")), self._signature(manifest)):
             raise ManifestError("manifest signature invalid")
         if not manifest.get("generation") or not manifest.get("bits") or set(manifest["bits"]) - {"0", "1"}:

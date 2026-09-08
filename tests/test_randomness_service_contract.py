@@ -160,6 +160,39 @@ def test_invalid_retained_manifest_timestamp_reports_unavailable(tmp_path):
     }
 
 
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("bits", [["0"]]),
+        ("generation", ["generation"]),
+        ("generated_at", {"date": "2026-09-08T00:00:00Z"}),
+    ],
+)
+def test_malformed_signed_manifest_reports_unavailable_instead_of_raising(
+    tmp_path, field, value
+):
+    store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    manifest = store.build_manifest(["00000001"], generated_at="2026-09-08T00:00:00Z")
+    manifest[field] = value
+    manifest["signature"] = store._signature(manifest)
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    app = create_app({
+        "TESTING": True,
+        "QUANTUM_MANIFEST_SIGNING_KEY": b"signing-key",
+        "QUANTUM_CACHE_DIR": str(tmp_path),
+    })
+
+    response = app.test_client().get("/v1/status")
+
+    assert response.status_code == 200
+    assert response.get_json()["provenance"] == {
+        "source": "os_csprng",
+        "quantum_cache": "unavailable",
+    }
+
+
 def test_fly_config_uses_production_wsgi_and_worker_only_secret_contract():
     fly_config = Path("fly.toml").read_text(encoding="utf-8")
     assert "gunicorn" in fly_config
@@ -171,9 +204,11 @@ def test_fly_config_uses_production_wsgi_and_worker_only_secret_contract():
 
 def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume():
     fly_config = tomllib.loads(Path("fly.toml").read_text(encoding="utf-8"))
+    worker_config = tomllib.loads(Path("fly.worker.toml").read_text(encoding="utf-8"))
     policy = json.loads(Path("fly.api-policy.json").read_text(encoding="utf-8"))
     deploy_script = Path("tools/deploy_randomness_service.ps1").read_text(encoding="utf-8")
     mounts = {mount["source"]: mount["destination"] for mount in fly_config["mounts"]}
+    worker_mounts = {mount["source"]: mount["destination"] for mount in worker_config["mounts"]}
 
     assert policy == {
         "app": "quantum-randomness",
@@ -182,9 +217,14 @@ def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume()
         "volume_source": "quantum_randomness_data",
     }
     assert mounts[policy["volume_source"]] == "/data"
+    assert worker_mounts == {policy["volume_source"]: mounts[policy["volume_source"]]}
     assert policy["shared_consumption_path"].startswith(mounts[policy["volume_source"]] + "/")
     assert "fly scale count 1" in deploy_script
     assert "fly deploy --config fly.toml" in deploy_script
+    assert "fly deploy --config fly.worker.toml" in deploy_script
+    assert deploy_script.index("fly deploy --config fly.toml") < deploy_script.index(
+        "fly deploy --config fly.worker.toml"
+    )
     assert "QUANTUM_MANIFEST_SIGNING_KEY" in deploy_script
     assert "quantum-randomness-worker" in deploy_script
 
