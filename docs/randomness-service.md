@@ -3,7 +3,9 @@
 The `quantum-randomness` Fly.io app exposes bounded JSON primitives at `/v1`.
 The API machine runs in `iad` behind Gunicorn. The refill worker is deployed as
 the separate `quantum-randomness-worker` app, so IBM and Tigris credentials are
-not present in the API app environment.
+not present in the API app environment. Both apps receive the same
+`QUANTUM_MANIFEST_SIGNING_KEY`; the API needs it to verify worker-published
+manifests, while the worker needs it to sign them.
 
 ## Contract
 
@@ -15,7 +17,8 @@ not present in the API app environment.
 - The service accepts one Fly-managed bearer token, compares it in constant
   time, and never emits it, raw cache data, manifest hashes, or provider
   credentials in logs or status responses.
-- Limits are 1 KiB per request, 10 requests per minute, and 1 MiB per hour.
+- Limits are 1 KiB per byte request, 8192 bits per bit request (the same 1 KiB
+  byte-equivalent), 10 requests per minute, and 1 MiB per hour.
 
 ## Provenance and refill
 
@@ -55,11 +58,14 @@ The `quantum-randomness-worker` app reads the monthly UTC run from
 - `QUANTUM_MANIFEST_SIGNING_KEY` for HMAC signing.
 - `TIGRIS_ENDPOINT` is optional and defaults to Fly Tigris.
 
-Set those four worker secrets with `fly secrets set --app
-quantum-randomness-worker ...`; do not set them on the API app. Keep the API
-at one machine with `fly scale count 1 --app quantum-randomness`, then deploy
-it with `fly deploy --config fly.toml`; deploy the worker with
-`fly deploy --config fly.worker.toml`.
+Set the IBM and Tigris credentials only on the worker with `fly secrets set
+--app quantum-randomness-worker ...`; do not set them on the API app. Set the
+same `QUANTUM_MANIFEST_SIGNING_KEY` on both apps, or export it in the operator
+environment and run `tools/deploy_randomness_service.ps1`, which forwards it to
+both Fly apps without storing the value in source. Keep the API at one machine
+with `fly scale count 1 --app quantum-randomness`, then deploy it with `fly
+deploy --config fly.toml`; deploy the worker with `fly deploy --config
+fly.worker.toml`.
 
 `boto3` is used only by the worker adapter. A refill is generated and signed,
 uploaded to the pending object, promoted to the stable key, and only then

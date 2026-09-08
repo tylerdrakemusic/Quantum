@@ -7,6 +7,7 @@ primary_region = "iad"
 [env]
   QUANTUM_CACHE_DIR = "/data/verified"
   QUANTUM_MANIFEST_URL = "https://fly.storage.tigris.dev/quantum-randomness-cache/verified/generation.json"
+  QUANTUM_MANIFEST_SIGNING_KEY = ""
 
 [[mounts]]
   source = "quantum_randomness_data"

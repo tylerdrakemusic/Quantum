@@ -11,6 +11,7 @@ from .limits import RateLimiter
 from .provider import VerifiedCacheStore, random_bytes
 
 MAX_BYTES = 1024
+MAX_BITS = MAX_BYTES * 8
 
 
 def create_app(config: dict[str, Any] | None = None) -> Flask:
@@ -44,12 +45,12 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             return jsonify({"error": "rate_limit_exceeded"}), 429
         return None
 
-    def length(name: str, default: int = 1) -> int:
+    def length(name: str, default: int = 1, maximum: int = MAX_BYTES) -> int:
         try:
             value = int(request.args.get(name, default))
         except (TypeError, ValueError):
             raise ValueError(f"{name} must be an integer")
-        if value < 1 or (name == "n" and value > MAX_BYTES):
+        if value < 1 or (name == "n" and value > maximum):
             raise ValueError(f"{name} is outside the allowed range")
         return value
 
@@ -101,8 +102,10 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         denied = guarded(units=max(1, (requested + 7) // 8))
         if denied:
             return denied
+        if requested > MAX_BITS:
+            return jsonify({"error": "request exceeds 1 KiB limit"}), 413
         try:
-            count = length("n")
+            count = length("n", maximum=MAX_BITS)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         if store and app.config["QUANTUM_MANIFEST_URL"]:

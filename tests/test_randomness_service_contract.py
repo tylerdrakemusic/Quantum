@@ -60,6 +60,17 @@ def test_bits_integer_and_bool_endpoints_return_typed_json(client):
     assert isinstance(boolean.get_json()["value"], bool)
 
 
+def test_bits_endpoint_accepts_documented_maximum_and_rejects_above_it(client):
+    headers = {"Authorization": "Bearer test-token"}
+
+    maximum = client.get("/v1/bits?n=8192", headers=headers)
+    above_maximum = client.get("/v1/bits?n=8193", headers=headers)
+
+    assert maximum.status_code == 200
+    assert len(maximum.get_json()["bits"]) == 8192
+    assert above_maximum.status_code == 413
+
+
 def test_request_size_limit_is_one_kibibyte(client):
     response = client.get(
         "/v1/bytes?n=1025", headers={"Authorization": "Bearer test-token"}
@@ -127,11 +138,33 @@ def test_status_remains_available_when_remote_manifest_and_local_fallback_are_mi
     assert response.get_json()["provenance"]["quantum_cache"] == "unavailable"
 
 
+def test_invalid_retained_manifest_timestamp_reports_unavailable(tmp_path):
+    store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    manifest = store.build_manifest(["00000001"], generated_at="not-a-timestamp")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    app = create_app({
+        "TESTING": True,
+        "QUANTUM_MANIFEST_SIGNING_KEY": b"signing-key",
+        "QUANTUM_CACHE_DIR": str(tmp_path),
+    })
+
+    response = app.test_client().get("/v1/status")
+
+    assert response.status_code == 200
+    assert response.get_json()["provenance"] == {
+        "source": "os_csprng",
+        "quantum_cache": "unavailable",
+    }
+
+
 def test_fly_config_uses_production_wsgi_and_worker_only_secret_contract():
     fly_config = Path("fly.toml").read_text(encoding="utf-8")
     assert "gunicorn" in fly_config
     assert "IBM_CLOUD_API_KEY" not in fly_config.split("[env]", 1)[1].split("[[mounts]]", 1)[0]
     assert "AWS_SECRET_ACCESS_KEY" not in fly_config.split("[env]", 1)[1].split("[[mounts]]", 1)[0]
+    assert "QUANTUM_MANIFEST_SIGNING_KEY" in fly_config
     assert "worker" in fly_config
 
 
@@ -151,6 +184,8 @@ def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume()
     assert policy["shared_consumption_path"].startswith(mounts[policy["volume_source"]] + "/")
     assert "fly scale count 1" in deploy_script
     assert "fly deploy --config fly.toml" in deploy_script
+    assert "QUANTUM_MANIFEST_SIGNING_KEY" in deploy_script
+    assert "quantum-randomness-worker" in deploy_script
 
 
 def test_pyproject_discovers_service_package_and_declares_runtime_dependencies():

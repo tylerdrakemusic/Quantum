@@ -89,7 +89,10 @@ class VerifiedCacheStore:
             raise ManifestError("manifest signature invalid")
         if not manifest.get("generation") or not manifest.get("bits") or set(manifest["bits"]) - {"0", "1"}:
             raise ManifestError("manifest content invalid")
-        _parse_time(str(manifest["generated_at"]))
+        try:
+            _parse_time(str(manifest["generated_at"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ManifestError("manifest timestamp invalid") from exc
 
     def load_verified(self) -> VerifiedGeneration:
         try:
