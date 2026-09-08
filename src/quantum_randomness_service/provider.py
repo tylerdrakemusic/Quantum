@@ -135,6 +135,22 @@ class VerifiedCacheStore:
             "quantum_cache": "current" if fresh else "stale",
         }
 
+    def remaining_bits(self) -> int:
+        """Return unreserved bits in the verified generation."""
+        with self._consumption_lock:
+            generation = self.load_verified()
+            try:
+                with sqlite3.connect(self.consumption_path, timeout=30.0) as connection:
+                    connection.execute("PRAGMA busy_timeout = 30000")
+                    row = connection.execute(
+                        "SELECT offset FROM consumption WHERE generation = ?",
+                        (generation.generation,),
+                    ).fetchone()
+            except sqlite3.Error:
+                raise
+            offset = int(row[0]) if row else 0
+            return max(0, len(generation.bits) - offset)
+
     def consume_bytes(self, length: int) -> tuple[bytes, dict[str, str]] | None:
         """Consume the next bytes from the current fresh generation safely."""
         if length < 1:

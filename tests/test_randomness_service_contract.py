@@ -20,6 +20,7 @@ from quantum_randomness_service.worker import (
     publish_atomically,
     refill_needed,
     next_scheduled_run,
+    run_scheduled_worker,
 )
 
 
@@ -296,6 +297,61 @@ def test_worker_refills_at_or_below_twenty_five_percent():
     assert refill_needed(24, 100)
     assert refill_needed(25, 100)
     assert not refill_needed(26, 100)
+
+
+def test_scheduled_worker_refills_after_shared_consumption_crosses_threshold(tmp_path):
+    store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    store.publish(["0" * 100], generated_at="2026-09-01T00:00:00Z")
+    random_bytes(10, store)
+
+    now = [datetime(2026, 9, 1, 6, 59, tzinfo=timezone.utc)]
+    provider_calls: list[int] = []
+    published: list[dict[str, object]] = []
+
+    class Provider:
+        def generate(self, bit_count: int) -> list[str]:
+            provider_calls.append(bit_count)
+            return ["1" * bit_count]
+
+    class Publisher:
+        def put_object(self, *, bucket: str, key: str, body: bytes) -> None:
+            published.append(json.loads(body))
+
+        def copy_object(self, **kwargs) -> None:
+            pass
+
+        def delete_object(self, **kwargs) -> None:
+            pass
+
+    def clock() -> datetime:
+        return now[0]
+
+    sleep_calls = 0
+
+    def sleeper(seconds: float) -> None:
+        nonlocal sleep_calls
+        sleep_calls += 1
+        if sleep_calls == 1:
+            now[0] = datetime(2026, 9, 1, 7, tzinfo=timezone.utc)
+        else:
+            raise RuntimeError("stop scheduled worker")
+
+    with pytest.raises(RuntimeError, match="stop scheduled worker"):
+        run_scheduled_worker(
+            store=store,
+            provider=Provider(),
+            publisher=Publisher(),
+            capacity_bits=100,
+            refill_bits=16,
+            clock=clock,
+            sleeper=sleeper,
+            day=1,
+            hour=7,
+            minute=0,
+        )
+
+    assert provider_calls == [16]
+    assert len(published) == 1
 
 
 def test_worker_publishes_pending_manifest_then_promotes_it():

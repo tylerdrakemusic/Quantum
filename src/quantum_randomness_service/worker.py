@@ -190,7 +190,7 @@ def run_scheduled_worker(
         delay = max((scheduled - clock().astimezone(timezone.utc)).total_seconds(), 0.0)
         sleeper(delay)
         try:
-            remaining = len(store.load_verified().bits)
+            remaining = store.remaining_bits()
         except Exception:
             remaining = 0
         try:
