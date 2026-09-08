@@ -1,0 +1,29 @@
+app = "quantum-randomness"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  QUANTUM_CACHE_DIR = "/data/verified"
+  QUANTUM_MANIFEST_URL = "https://fly.storage.tigris.dev/quantum-randomness-cache/verified/generation.json"
+
+[[mounts]]
+  source = "quantum_randomness_data"
+  destination = "/data"
+
+[[services]]
+  internal_port = 8211
+  protocol = "tcp"
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+  processes = ["app"]
+
+[processes]
+  app = "gunicorn --bind 0.0.0.0:8211 --workers 2 quantum_randomness_service.app:app"

@@ -1,0 +1,68 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a2e3a', 'primaryTextColor': '#d0ecf8', 'edgeLabelBackground': '#0f1318', 'lineColor': '#4a7a9a'}}}%%
+%% is_derived_view=true
+%% Traceability.parent: diagrams/quantum-architecture.mmd
+%% Scope: authenticated Fly.io API and worker-owned verified cache publication
+graph TB
+    Client[Authenticated client<br/>Authorization: Bearer token]:::state
+
+    subgraph API["Fly.io API app · quantum-randomness"]
+        Gunicorn[Gunicorn<br/>0.0.0.0:8211]:::quantum
+        Flask[quantum_randomness_service.app:create_app<br/>/v1 bytes · bits · ints · bool]:::quantum
+        Auth[Constant-time bearer auth<br/>rate limits and request bounds]:::state
+        Refresh[Refresh worker-published manifest<br/>verify HMAC-SHA256 signature]:::quantum
+        Retained[Atomically retained local<br/>verified-generation.json]:::db
+        APIStatus[Public status<br/>current · stale · unavailable]:::state
+    end
+
+    subgraph Worker["Separate Fly.io refill worker · quantum-randomness-worker"]
+        Schedule[Monthly policy schedule<br/>day 1 · 07:00 UTC]:::state
+        Refill[Threshold-gated refill<br/>remaining bits <= 25 percent]:::quantum
+        IBM{{IBM Quantum provider<br/>measured Hadamard bits}}:::ext
+        Sign[Build signed generation<br/>HMAC-SHA256 manifest]:::quantum
+        Publish[Pending object then atomic promotion<br/>verified/generation.json]:::quantum
+    end
+
+    Tigris{{Fly Tigris S3-compatible storage<br/>quantum-randomness-cache}}:::ext
+    Quantum[Verified quantum source<br/>current generation with sufficient bits]:::quantum
+    Stale[Stale verified generation<br/>older than 30 days]:::state
+    Unavailable[Unavailable or invalid cache]:::state
+    CSPRNG[OS CSPRNG<br/>secrets.token_bytes]:::ext
+    Provenance[Response provenance<br/>source + quantum_cache state]:::state
+
+    Client --> Gunicorn
+    Gunicorn --> Flask
+    Flask --> Auth
+    Auth --> Refresh
+    Refresh --> Tigris
+    Refresh --> Retained
+    Retained --> APIStatus
+    Flask --> APIStatus
+    Refresh --> Quantum
+    Refresh --> Stale
+    Refresh --> Unavailable
+    Quantum --> Provenance
+    Stale --> Provenance
+    Unavailable --> Provenance
+    Quantum --> Flask
+    Stale --> CSPRNG
+    Unavailable --> CSPRNG
+    CSPRNG --> Provenance
+    Provenance --> Flask
+    Schedule --> Refill
+    Refill --> IBM
+    IBM --> Sign
+    Sign ==> Publish
+    Publish --> Tigris
+    Publish --> Retained
+    Retained -.->|"previous verified generation remains on fetch or publish failure"| Refresh
+
+classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
+classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
+classDef quantum  fill:#251a3a,stroke:#a07adf,color:#e8d0f8
+classDef manifest fill:#3a2e1a,stroke:#d4a96a,color:#f8ead0
+classDef ws       fill:#1a3a30,stroke:#6ad4b4,color:#d0f8ee
+classDef tyler    fill:#2a1a3a,stroke:#9e4aff,color:#fff
+classDef ext      fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0
+classDef db       fill:#3a3010,stroke:#d4c050,color:#f8f0c0
+classDef state    fill:#1a1a1a,stroke:#888888,color:#cccccc
+classDef store    fill:#1a3a30,stroke:#6ad4b4,color:#d0f8ee

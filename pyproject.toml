@@ -10,11 +10,16 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Tyler James Drake" }]
-dependencies = []
+dependencies = [
+	"Flask>=3.0,<4",
+	"boto3>=1.35,<2",
+	"gunicorn>=23,<24",
+	"qiskit-ibm-runtime>=0.35,<1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["quantum_toolkit*", "utils*"]
+include = ["quantum_toolkit*", "quantum_randomness_service*", "utils*"]
 
 [tool.setuptools]
 py-modules = ["quantum_rt"]

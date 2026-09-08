@@ -1,0 +1,15 @@
+app = "quantum-randomness-worker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  QUANTUM_CACHE_DIR = "/data/verified"
+
+[[mounts]]
+  source = "quantum_randomness_worker_data"
+  destination = "/data"
+
+[processes]
+  app = "python tools/run_randomness_worker.py"

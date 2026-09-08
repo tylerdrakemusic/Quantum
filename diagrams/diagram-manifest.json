@@ -11,7 +11,10 @@
       "split_required": false,
       "lineage": {
         "parent": null,
-        "derived_views": ["diagrams/quantum-derived-cache-integrity.mmd"]
+        "derived_views": [
+          "diagrams/quantum-derived-cache-integrity.mmd",
+          "diagrams/quantum-randomness-service.mmd"
+        ]
       }
     },
     {
@@ -28,6 +31,17 @@
     {
       "path": "diagrams/quantum-derived-cache-integrity.mmd",
       "kind": "derived-lifecycle",
+      "renderer_risk": "medium",
+      "fallback_risk": "medium",
+      "split_required": false,
+      "lineage": {
+        "parent": "diagrams/quantum-architecture.mmd",
+        "derived_views": []
+      }
+    },
+    {
+      "path": "diagrams/quantum-randomness-service.mmd",
+      "kind": "detail",
       "renderer_risk": "medium",
       "fallback_risk": "medium",
       "split_required": false,
