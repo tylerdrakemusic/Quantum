@@ -139,6 +139,11 @@ def test_pyproject_discovers_service_package_and_declares_runtime_dependencies()
     assert "boto3" in metadata.lower()
 
 
+def test_docker_build_context_includes_declared_project_metadata():
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+    assert "COPY README.md LICENSE ./" in dockerfile
+
+
 def test_stale_verified_cache_is_reported_as_stale(tmp_path):
     store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
     store.publish(["0101"], generated_at="2026-08-01T00:00:00Z")
@@ -164,6 +169,23 @@ def test_stale_verified_cache_never_supplies_entropy_bytes(tmp_path, monkeypatch
 
     assert value == b"\xA5" * 8
     assert provenance == {"source": "os_csprng", "quantum_cache": "stale"}
+
+
+def test_fresh_verified_generation_is_consumed_sequentially(tmp_path):
+    store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    store.publish(
+        ["00000001", "00000010"],
+        generated_at="2026-09-08T00:00:00Z",
+    )
+
+    first, first_provenance = random_bytes(1, store)
+    second, second_provenance = random_bytes(1, store)
+
+    assert first == b"\x01"
+    assert second == b"\x02"
+    assert first != second
+    assert first_provenance["source"] == second_provenance["source"] == "quantum"
+    assert first_provenance["quantum_cache"] == second_provenance["quantum_cache"] == "current"
 
 
 def test_worker_refills_at_or_below_twenty_five_percent():

@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import tempfile
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,6 +38,9 @@ class VerifiedCacheStore:
         self.signing_key = signing_key
         self.max_age = timedelta(days=max_age_days)
         self.path = self.directory / "verified-generation.json"
+        self._consumption_lock = threading.RLock()
+        self._consumed_generation: str | None = None
+        self._consumed_offset = 0
 
     def _signature(self, manifest: dict[str, Any]) -> str:
         unsigned = {key: value for key, value in manifest.items() if key != "signature"}
@@ -63,21 +67,25 @@ class VerifiedCacheStore:
         return manifest
 
     def accept_manifest(self, manifest: dict[str, Any]) -> None:
-        self._validate_manifest(manifest)
-        self.directory.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(prefix=".verified-", dir=self.directory)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(manifest, stream, sort_keys=True)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
-        except BaseException:
+        with self._consumption_lock:
+            self._validate_manifest(manifest)
+            self.directory.mkdir(parents=True, exist_ok=True)
+            descriptor, temporary = tempfile.mkstemp(prefix=".verified-", dir=self.directory)
             try:
-                os.unlink(temporary)
-            except FileNotFoundError:
-                pass
-            raise
+                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                    json.dump(manifest, stream, sort_keys=True)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, self.path)
+            except BaseException:
+                try:
+                    os.unlink(temporary)
+                except FileNotFoundError:
+                    pass
+                raise
+            if manifest["generation"] != self._consumed_generation:
+                self._consumed_generation = manifest["generation"]
+                self._consumed_offset = 0
 
     def _validate_manifest(self, manifest: dict[str, Any]) -> None:
         if not hmac.compare_digest(str(manifest.get("signature", "")), self._signature(manifest)):
@@ -127,16 +135,38 @@ class VerifiedCacheStore:
             "quantum_cache": "current" if fresh else "stale",
         }
 
+    def consume_bytes(self, length: int) -> tuple[bytes, dict[str, str]] | None:
+        """Consume the next bytes from the current fresh generation safely."""
+        if length < 1:
+            raise ValueError("length must be positive")
+        with self._consumption_lock:
+            generation = self.load_verified()
+            current = datetime.now(timezone.utc)
+            fresh = current - generation.generated_at <= self.max_age
+            provenance = {
+                "source": "quantum" if fresh else "os_csprng",
+                "quantum_cache": "current" if fresh else "stale",
+            }
+            if not fresh:
+                return None
+            if generation.generation != self._consumed_generation:
+                self._consumed_generation = generation.generation
+                self._consumed_offset = 0
+            needed = length * 8
+            end = self._consumed_offset + needed
+            if end > len(generation.bits):
+                return None
+            bits = generation.bits[self._consumed_offset:end]
+            self._consumed_offset = end
+            return int(bits, 2).to_bytes(length, "big"), provenance
+
 
 def random_bytes(length: int, store: VerifiedCacheStore | None = None) -> tuple[bytes, dict[str, str]]:
     if store is not None:
         try:
-            generation = store.load_verified()
-            provenance = store.status()
-            bits = generation.bits
-            needed = length * 8
-            if provenance["source"] == "quantum" and len(bits) >= needed:
-                return int(bits[:needed], 2).to_bytes(length, "big"), provenance
+            consumed = store.consume_bytes(length)
+            if consumed is not None:
+                return consumed
         except ManifestError:
             pass
     return secrets.token_bytes(length), store.status() if store else {"source": "os_csprng", "quantum_cache": "unavailable"}
