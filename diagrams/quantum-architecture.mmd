@@ -21,6 +21,11 @@ graph TB
     Normalize[Dashboard legacy normalization<br/>provenance_status = legacy]:::quantum
     Dashboard[reports/benchmark_dashboard.html<br/>generated dashboard]:::store
     Backends[IBM Quantum + local Aer<br/>configured experiment backends]:::ext
+    InstalledPackage[Installed quantum-toolkit distribution<br/>wheel or source distribution]:::state
+    PublicAPI[quantum_toolkit<br/>stable installed public API]:::quantum
+    LegacyAPI[quantum_rt<br/>deprecated compatibility shim]:::state
+    RuntimeAPI[utils.quantum_rt<br/>legacy implementation]:::quantum
+    ConsumerSmoke[Isolated CI consumer<br/>package_smoke.py]:::state
     Shor --> Contract
     VQE --> Contract
     QAOA --> Contract
@@ -42,6 +47,12 @@ graph TB
     Legacy --> Normalize
     Normalize --> Dashboard
     QuantumDB --> Dashboard
+    InstalledPackage --> PublicAPI
+    InstalledPackage --> LegacyAPI
+    PublicAPI --> RuntimeAPI
+    LegacyAPI -.->|"deprecated compatibility boundary"| PublicAPI
+    ConsumerSmoke --> PublicAPI
+    ConsumerSmoke --> LegacyAPI
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
 classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
