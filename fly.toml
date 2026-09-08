@@ -24,7 +24,7 @@ primary_region = "iad"
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 1
-  processes = ["app"]
+  processes = ["machine"]
 
 [processes]
-  app = "gunicorn --bind 0.0.0.0:8211 --workers 2 quantum_randomness_service.app:app"
+  machine = "python tools/run_randomness_machine.py"

@@ -5,19 +5,17 @@
 graph TB
     Client[Authenticated client<br/>Authorization: Bearer token]:::state
 
-    subgraph API["Fly.io API app · quantum-randomness"]
+    subgraph Machine["One Fly.io machine · quantum-randomness · one mounted volume"]
         Gunicorn[Gunicorn<br/>0.0.0.0:8211]:::quantum
         Flask[quantum_randomness_service.app:create_app<br/>/v1 bytes · bits · ints · bool]:::quantum
         Auth[Constant-time bearer auth<br/>rate limits and request bounds]:::state
         Refresh[Refresh worker-published manifest<br/>verify HMAC-SHA256 signature]:::quantum
+        Worker[Refill worker sibling process<br/>machine supervisor]:::quantum
         subgraph Volume["Persistent volume · quantum_randomness_data mounted at /data"]
             Retained[Atomically retained local<br/>verified-generation.json]:::db
             Consumption[consumption.sqlite3<br/>shared reservation ledger]:::db
         end
         APIStatus[Public status<br/>current · stale · unavailable]:::state
-    end
-
-    subgraph Worker["Separate Fly.io refill worker · quantum-randomness-worker · shared quantum_randomness_data at /data"]
         Schedule[Monthly policy schedule<br/>day 1 · 07:00 UTC]:::state
         Refill[Threshold-gated refill<br/>remaining bits <= 25 percent]:::quantum
         IBM{{IBM Quantum provider<br/>measured Hadamard bits}}:::ext
@@ -59,7 +57,8 @@ graph TB
     Sign ==> Publish
     Publish --> Tigris
     Publish --> Retained
-    Worker -.->|"same persistent boundary; reads shared consumption.sqlite3"| Consumption
+    Worker -.->|"same process boundary; reads the same consumption.sqlite3"| Consumption
+    Worker -.->|"API child receives no IBM/Tigris credentials"| Gunicorn
     Retained -.->|"previous verified generation remains on fetch or publish failure"| Refresh
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8

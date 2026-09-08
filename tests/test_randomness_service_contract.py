@@ -195,38 +195,62 @@ def test_malformed_signed_manifest_reports_unavailable_instead_of_raising(
 
 def test_fly_config_uses_production_wsgi_and_worker_only_secret_contract():
     fly_config = Path("fly.toml").read_text(encoding="utf-8")
-    assert "gunicorn" in fly_config
+    machine_runner = Path("tools/run_randomness_machine.py").read_text(encoding="utf-8")
+    assert "gunicorn" in machine_runner
     assert "IBM_CLOUD_API_KEY" not in fly_config.split("[env]", 1)[1].split("[[mounts]]", 1)[0]
     assert "AWS_SECRET_ACCESS_KEY" not in fly_config.split("[env]", 1)[1].split("[[mounts]]", 1)[0]
     assert "QUANTUM_MANIFEST_SIGNING_KEY" in fly_config
-    assert "worker" in fly_config
+    assert "machine" in fly_config
 
 
 def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume():
     fly_config = tomllib.loads(Path("fly.toml").read_text(encoding="utf-8"))
-    worker_config = tomllib.loads(Path("fly.worker.toml").read_text(encoding="utf-8"))
     policy = json.loads(Path("fly.api-policy.json").read_text(encoding="utf-8"))
     deploy_script = Path("tools/deploy_randomness_service.ps1").read_text(encoding="utf-8")
     mounts = {mount["source"]: mount["destination"] for mount in fly_config["mounts"]}
-    worker_mounts = {mount["source"]: mount["destination"] for mount in worker_config["mounts"]}
 
-    assert policy == {
-        "app": "quantum-randomness",
-        "machine_count": 1,
-        "shared_consumption_path": "/data/verified/consumption.sqlite3",
-        "volume_source": "quantum_randomness_data",
-    }
+    assert policy["app"] == "quantum-randomness"
+    assert policy["machine_count"] == 1
+    assert policy["machine_process"] == "machine"
+    assert policy["gunicorn_workers"] == 1
+    assert policy["shared_consumption_path"] == "/data/verified/consumption.sqlite3"
+    assert policy["volume_source"] == "quantum_randomness_data"
     assert mounts[policy["volume_source"]] == "/data"
-    assert worker_mounts == {policy["volume_source"]: mounts[policy["volume_source"]]}
     assert policy["shared_consumption_path"].startswith(mounts[policy["volume_source"]] + "/")
     assert "fly scale count 1" in deploy_script
     assert "fly deploy --config fly.toml" in deploy_script
-    assert "fly deploy --config fly.worker.toml" in deploy_script
-    assert deploy_script.index("fly deploy --config fly.toml") < deploy_script.index(
-        "fly deploy --config fly.worker.toml"
-    )
     assert "QUANTUM_MANIFEST_SIGNING_KEY" in deploy_script
-    assert "quantum-randomness-worker" in deploy_script
+
+
+def test_single_fly_machine_owns_api_and_worker_with_worker_only_credentials():
+    fly_config = tomllib.loads(Path("fly.toml").read_text(encoding="utf-8"))
+    policy = json.loads(Path("fly.api-policy.json").read_text(encoding="utf-8"))
+    machine_runner = Path("tools/run_randomness_machine.py").read_text(encoding="utf-8")
+    deploy_script = Path("tools/deploy_randomness_service.ps1").read_text(encoding="utf-8")
+
+    assert fly_config["app"] == policy["app"] == "quantum-randomness"
+    assert policy["machine_count"] == 1
+    assert fly_config["processes"] == {"machine": "python tools/run_randomness_machine.py"}
+    assert fly_config["mounts"] == [{"source": "quantum_randomness_data", "destination": "/data"}]
+    assert "IBM_CLOUD_API_KEY" in machine_runner
+    assert "AWS_SECRET_ACCESS_KEY" in machine_runner
+    assert "api_environment" in machine_runner
+    assert "worker-only" in machine_runner.lower()
+    assert "fly.worker.toml" not in deploy_script
+    assert "quantum-randomness-worker" not in deploy_script
+
+
+def test_rate_limit_contract_uses_one_gunicorn_worker_everywhere():
+    fly_config = Path("fly.toml").read_text(encoding="utf-8")
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+    machine_runner = Path("tools/run_randomness_machine.py").read_text(encoding="utf-8")
+    policy = json.loads(Path("fly.api-policy.json").read_text(encoding="utf-8"))
+    docs = Path("docs/randomness-service.md").read_text(encoding="utf-8")
+
+    assert policy["gunicorn_workers"] == 1
+    assert '"--workers",\n            "1"' in machine_runner
+    assert "run_randomness_machine.py" in dockerfile
+    assert "one\nGunicorn worker" in docs
 
 
 def test_pyproject_discovers_service_package_and_declares_runtime_dependencies():

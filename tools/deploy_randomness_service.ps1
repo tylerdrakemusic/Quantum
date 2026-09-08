@@ -15,11 +15,6 @@ fly secrets set --app $policy.app "QUANTUM_MANIFEST_SIGNING_KEY=$signingKey"
 if ($LASTEXITCODE -ne 0) {
     throw "API signing-key secret update failed"
 }
-fly secrets set --app quantum-randomness-worker "QUANTUM_MANIFEST_SIGNING_KEY=$signingKey"
-if ($LASTEXITCODE -ne 0) {
-    throw "worker signing-key secret update failed"
-}
-
 fly scale count 1 --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "fly scale count failed"
@@ -28,9 +23,4 @@ if ($LASTEXITCODE -ne 0) {
 fly deploy --config fly.toml --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "fly deploy failed"
-}
-
-fly deploy --config fly.worker.toml --app quantum-randomness-worker
-if ($LASTEXITCODE -ne 0) {
-    throw "worker fly deploy failed"
 }

@@ -1,6 +1,8 @@
 {
   "app": "quantum-randomness",
   "machine_count": 1,
+  "gunicorn_workers": 1,
+  "machine_process": "machine",
   "shared_consumption_path": "/data/verified/consumption.sqlite3",
   "volume_source": "quantum_randomness_data"
 }

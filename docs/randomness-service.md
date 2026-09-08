@@ -1,11 +1,11 @@
 # Quantum Randomness Service
 
 The `quantum-randomness` Fly.io app exposes bounded JSON primitives at `/v1`.
-The API machine runs in `iad` behind Gunicorn. The refill worker is deployed as
-the separate `quantum-randomness-worker` app, so IBM and Tigris credentials are
-not present in the API app environment. Both apps receive the same
-`QUANTUM_MANIFEST_SIGNING_KEY`; the API needs it to verify worker-published
-manifests, while the worker needs it to sign them.
+The `quantum-randomness` app runs one Fly machine in `iad`. Its machine runner
+starts Gunicorn with one worker and the refill worker as sibling processes, so
+both processes use the same mounted volume and transactional SQLite ledger.
+The runner removes IBM and Tigris credentials from the API child environment;
+those credentials remain available only to the worker child.
 
 ## Contract
 
@@ -33,14 +33,14 @@ pending object copied into place atomically.
 
 Fresh bytes are reserved through `consumption.sqlite3` in the same mounted
 `QUANTUM_CACHE_DIR` as `verified-generation.json`. Each request reserves its
-range in a SQLite `BEGIN IMMEDIATE` transaction keyed by generation, so
-independently running Gunicorn workers cannot return the same fresh range.
-The API and refill worker both mount the `quantum_randomness_data` boundary at
-`/data`, so the worker's threshold calculation observes the API's reservations
-instead of creating a second ledger. SQLite or cache I/O failure preserves the
-existing OS-CSPRNG fallback and provenance contract. Keep the API at one Fly
-Machine with `fly scale count 1`; do not scale either app across machines unless
-the reservation ledger is moved to a shared transactional store.
+range in a SQLite `BEGIN IMMEDIATE` transaction keyed by generation. The
+single machine runner guarantees that the API and refill worker open that one
+file, rather than relying on identical volume names across Fly apps. SQLite or
+cache I/O failure preserves the existing OS-CSPRNG fallback and provenance
+contract. Keep the app at one Fly machine with `fly scale count 1`; the
+documented 10 requests per minute and 1 MiB per hour limits rely on one
+Gunicorn worker and must not be scaled horizontally without shared limiter
+state.
 
 The worker requests a refill when remaining bits are at or below 25 percent of
 capacity. IBM credentials remain environment variables and are not part of the
@@ -48,7 +48,7 @@ image, manifest, or logs.
 
 ## Worker deployment
 
-The `quantum-randomness-worker` app reads the monthly UTC run from
+The refill worker reads the monthly UTC run from
 `src/config/execution_policy.json` (`QuantumCacheFill_Monthly`, day 1 at
 07:00 UTC). It requires these Fly secrets or environment variables:
 
@@ -58,15 +58,13 @@ The `quantum-randomness-worker` app reads the monthly UTC run from
 - `QUANTUM_MANIFEST_SIGNING_KEY` for HMAC signing.
 - `TIGRIS_ENDPOINT` is optional and defaults to Fly Tigris.
 
-Set the IBM and Tigris credentials only on the worker with `fly secrets set
---app quantum-randomness-worker ...`; do not set them on the API app. Set the
-same `QUANTUM_MANIFEST_SIGNING_KEY` on both apps, or export it in the operator
-environment and run `tools/deploy_randomness_service.ps1`, which forwards it to
-both Fly apps without storing the value in source. Deployment order is
-intentional: scale the API to one machine, deploy `fly.toml` first so the
-`quantum_randomness_data` volume and API ledger exist, then deploy
-`fly.worker.toml` with the same volume source. The worker starts only after the
-API boundary is ready and never serves API bytes.
+Set the IBM and Tigris credentials on the `quantum-randomness` app with `fly
+secrets set`; the machine runner strips them before starting the API child and
+passes them only to the refill worker. Set `QUANTUM_MANIFEST_SIGNING_KEY` in
+the operator environment and run `tools/deploy_randomness_service.ps1`, which
+forwards it to the one app without storing the value in source. Deployment
+creates exactly one machine and one mounted `quantum_randomness_data` volume;
+the machine runner then starts both sibling processes against that boundary.
 
 `boto3` is used only by the worker adapter. A refill is generated and signed,
 uploaded to the pending object, promoted to the stable key, and only then
