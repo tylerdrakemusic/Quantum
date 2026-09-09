@@ -147,15 +147,17 @@ class VerifiedCacheStore:
         """Return unreserved bits in the verified generation."""
         with self._consumption_lock:
             generation = self.load_verified()
-            try:
-                with sqlite3.connect(self.consumption_path, timeout=30.0) as connection:
-                    connection.execute("PRAGMA busy_timeout = 30000")
-                    row = connection.execute(
-                        "SELECT offset FROM consumption WHERE generation = ?",
-                        (generation.generation,),
-                    ).fetchone()
-            except sqlite3.Error:
-                raise
+            self.directory.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(self.consumption_path, timeout=30.0) as connection:
+                connection.execute("PRAGMA busy_timeout = 30000")
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS consumption "
+                    "(generation TEXT PRIMARY KEY, offset INTEGER NOT NULL)"
+                )
+                row = connection.execute(
+                    "SELECT offset FROM consumption WHERE generation = ?",
+                    (generation.generation,),
+                ).fetchone()
             offset = int(row[0]) if row else 0
             return max(0, len(generation.bits) - offset)
 
@@ -209,5 +211,8 @@ def random_bytes(length: int, store: VerifiedCacheStore | None = None) -> tuple[
                 return consumed
         except (ManifestError, OSError, sqlite3.Error):
             return secrets.token_bytes(length), {"source": "os_csprng", "quantum_cache": "unavailable"}
-        return secrets.token_bytes(length), store.status()
+        provenance = store.status()
+        if provenance == {"source": "quantum", "quantum_cache": "current"}:
+            provenance = {"source": "os_csprng", "quantum_cache": "unavailable"}
+        return secrets.token_bytes(length), provenance
     return secrets.token_bytes(length), {"source": "os_csprng", "quantum_cache": "unavailable"}

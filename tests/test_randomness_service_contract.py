@@ -357,6 +357,29 @@ def test_fresh_verified_generation_coordinates_consumption_across_store_instance
     }
 
 
+def test_exhausted_fresh_generation_reports_unavailable_csprng_provenance(tmp_path, monkeypatch):
+    store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    store.publish(["00000001"], generated_at="2026-09-08T00:00:00Z")
+    monkeypatch.setattr(
+        "quantum_randomness_service.provider.secrets.token_bytes",
+        lambda length: b"\xA5" * length,
+    )
+
+    first, first_provenance = random_bytes(1, store)
+    second, second_provenance = random_bytes(1, store)
+
+    assert first == b"\x01"
+    assert first_provenance == {
+        "source": "quantum",
+        "quantum_cache": "current",
+    }
+    assert second == b"\xA5"
+    assert second_provenance == {
+        "source": "os_csprng",
+        "quantum_cache": "unavailable",
+    }
+
+
 def test_worker_refills_at_or_below_twenty_five_percent():
     assert refill_needed(24, 100)
     assert refill_needed(25, 100)
@@ -416,6 +439,75 @@ def test_scheduled_worker_refills_after_shared_consumption_crosses_threshold(tmp
 
     assert provider_calls == [16]
     assert len(published) == 1
+
+
+def test_fresh_deployment_initializes_ledger_without_unconditional_scheduled_refill(tmp_path):
+    store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    store.publish(["0" * 100], generated_at="2026-09-01T00:00:00Z")
+    assert not store.consumption_path.exists()
+
+    provider_calls: list[int] = []
+
+    class Provider:
+        def generate(self, bit_count: int) -> list[str]:
+            provider_calls.append(bit_count)
+            return ["1" * bit_count]
+
+    class Publisher:
+        def put_object(self, **kwargs) -> None:
+            pass
+
+        def copy_object(self, **kwargs) -> None:
+            pass
+
+        def delete_object(self, **kwargs) -> None:
+            pass
+
+    now = [datetime(2026, 9, 1, 6, 59, tzinfo=timezone.utc)]
+    sleep_calls = 0
+
+    def clock() -> datetime:
+        return now[0]
+
+    def sleeper(seconds: float) -> None:
+        nonlocal sleep_calls
+        sleep_calls += 1
+        if sleep_calls == 1:
+            now[0] = datetime(2026, 9, 1, 7, tzinfo=timezone.utc)
+        else:
+            raise RuntimeError("stop scheduled worker")
+
+    with pytest.raises(RuntimeError, match="stop scheduled worker"):
+        run_scheduled_worker(
+            store=store,
+            provider=Provider(),
+            publisher=Publisher(),
+            capacity_bits=100,
+            refill_bits=16,
+            clock=clock,
+            sleeper=sleeper,
+            day=1,
+            hour=7,
+            minute=0,
+        )
+
+    assert provider_calls == []
+    assert store.remaining_bits() == 100
+    assert store.consumption_path.exists()
+
+    store.consume_bytes(10)
+    assert store.remaining_bits() == 20
+    assert run_refill_once(
+        now=datetime(2026, 9, 1, 7, tzinfo=timezone.utc),
+        store=store,
+        provider=Provider(),
+        publisher=Publisher(),
+        remaining_bits=store.remaining_bits(),
+        capacity_bits=100,
+        scheduled_for=datetime(2026, 9, 1, 7, tzinfo=timezone.utc),
+        refill_bits=16,
+    )
+    assert provider_calls == [16]
 
 
 def test_worker_publishes_pending_manifest_then_promotes_it():
