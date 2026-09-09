@@ -24,7 +24,7 @@ from quantum_randomness_service.worker import (
     next_scheduled_run,
     run_scheduled_worker,
 )
-from tools.run_randomness_machine import worker_environment
+from tools.run_randomness_machine import api_environment, worker_environment
 
 
 @pytest.fixture()
@@ -119,6 +119,56 @@ def test_worker_environment_excludes_api_bearer_token_and_preserves_worker_crede
             "QUANTUM_CACHE_DIR",
         )
     }
+
+
+def test_machine_environments_split_api_auth_and_verified_cache_configuration(tmp_path):
+    environment = {
+        "FLY_BEARER_TOKEN": "api-token",
+        "IBM_CLOUD_API_KEY": "ibm-key",
+        "IBM_QUANTUM_INSTANCE": "ibm-instance",
+        "AWS_ACCESS_KEY_ID": "tigris-access",
+        "AWS_SECRET_ACCESS_KEY": "tigris-secret",
+        "TIGRIS_ENDPOINT": "https://fly.storage.tigris.dev",
+        "QUANTUM_MANIFEST_SIGNING_KEY": "signing-key",
+        "QUANTUM_CACHE_DIR": str(tmp_path),
+        "QUANTUM_MANIFEST_URL": "https://fly.storage.tigris.dev/manifest.json",
+        "QUANTUM_CACHE_CAPACITY_BITS": "4096",
+        "QUANTUM_REFILL_BITS": "2048",
+        "UNRELATED_SECRET": "must-not-pass",
+    }
+
+    assert api_environment(environment) == {
+        "FLY_BEARER_TOKEN": "api-token",
+        "QUANTUM_MANIFEST_SIGNING_KEY": "signing-key",
+        "QUANTUM_CACHE_DIR": str(tmp_path),
+        "QUANTUM_MANIFEST_URL": "https://fly.storage.tigris.dev/manifest.json",
+    }
+    assert worker_environment(environment) == {
+        "IBM_CLOUD_API_KEY": "ibm-key",
+        "IBM_QUANTUM_INSTANCE": "ibm-instance",
+        "AWS_ACCESS_KEY_ID": "tigris-access",
+        "AWS_SECRET_ACCESS_KEY": "tigris-secret",
+        "TIGRIS_ENDPOINT": "https://fly.storage.tigris.dev",
+        "QUANTUM_MANIFEST_SIGNING_KEY": "signing-key",
+        "QUANTUM_CACHE_DIR": str(tmp_path),
+        "QUANTUM_CACHE_CAPACITY_BITS": "4096",
+        "QUANTUM_REFILL_BITS": "2048",
+    }
+
+    worker_store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
+    manifest = worker_store.publish(["0101"], generated_at="2026-09-08T00:00:00Z")
+    app = create_app(api_environment(environment))
+    app.config["QUANTUM_MANIFEST_URL"] = ""
+
+    response = app.test_client().get("/v1/status")
+
+    assert response.status_code == 200
+    assert response.get_json()["provenance"] == {
+        "source": "quantum",
+        "quantum_cache": "current",
+    }
+    assert app.config["QUANTUM_CACHE_DIR"] == str(tmp_path)
+    assert worker_store.load_verified().generation == manifest["generation"]
 
 
 def test_bits_endpoint_accepts_documented_maximum_and_rejects_above_it(client):

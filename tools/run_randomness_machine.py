@@ -8,6 +8,12 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parent.parent
+API_ENV = {
+    "FLY_BEARER_TOKEN",
+    "QUANTUM_MANIFEST_SIGNING_KEY",
+    "QUANTUM_CACHE_DIR",
+    "QUANTUM_MANIFEST_URL",
+}
 WORKER_ONLY_ENV = {
     "IBM_CLOUD_API_KEY",
     "IBM_QUANTUM_INSTANCE",
@@ -22,11 +28,9 @@ WORKER_ONLY_ENV = {
 
 
 def api_environment(environment: dict[str, str] | None = None) -> dict[str, str]:
-    """Return the API environment without worker-only provider credentials."""
+    """Return API configuration while excluding worker-only credentials."""
     values = dict(environment or os.environ)
-    for name in WORKER_ONLY_ENV:
-        values.pop(name, None)
-    return values
+    return {name: values[name] for name in API_ENV if name in values}
 
 
 def worker_environment(environment: dict[str, str] | None = None) -> dict[str, str]:
