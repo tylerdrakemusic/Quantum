@@ -34,7 +34,7 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/quantum-consumer"
           set -o pipefail
-          "$RUNNER_TEMP/quantum-consumer/bin/python" -m pip install --no-index --find-links dist quantum-toolkit 2>&1 | tee reports/install-validation.txt
+          "$RUNNER_TEMP/quantum-consumer/bin/python" -m pip install --no-cache-dir --find-links dist dist/*.whl 2>&1 | tee reports/install-validation.txt
           cd "$RUNNER_TEMP"
           env -u PYTHONPATH "$RUNNER_TEMP/quantum-consumer/bin/python" "$GITHUB_WORKSPACE/tools/package_smoke.py" --report "$GITHUB_WORKSPACE/reports/api-smoke.txt"
 

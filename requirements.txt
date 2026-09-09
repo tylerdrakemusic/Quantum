@@ -1,3 +1,7 @@
+Flask>=3.0,<4
+boto3>=1.35,<2
+gunicorn>=23,<24
+qiskit-ibm-runtime>=0.35,<1
 # ⟨ψ⟩Quantum runtime dependencies
 #
 # PySCF is intentionally NOT listed: it has no working Windows wheel and is

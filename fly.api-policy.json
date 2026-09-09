@@ -1,0 +1,12 @@
+{
+  "app": "quantum-randomness",
+  "machine_count": 1,
+  "gunicorn_workers": 1,
+  "machine_process": "machine",
+  "required_runtime_secrets": [
+    "FLY_BEARER_TOKEN",
+    "QUANTUM_MANIFEST_SIGNING_KEY"
+  ],
+  "shared_consumption_path": "/data/verified/consumption.sqlite3",
+  "volume_source": "quantum_randomness_data"
+}

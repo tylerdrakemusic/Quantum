@@ -26,14 +26,16 @@ def test_ci_builds_checks_and_publishes_both_distribution_formats() -> None:
     assert "package-content-report.txt" in workflow
 
 
-def test_ci_validates_the_wheel_outside_the_checkout() -> None:
+def test_ci_validates_the_exact_wheel_with_runtime_dependencies_outside_checkout() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "test.yml").read_text(
         encoding="utf-8"
     )
 
     assert "python -m venv" in workflow
     assert "package_smoke.py" in workflow
-    assert "--no-index" in workflow
+    assert "--find-links dist dist/*.whl" in workflow
+    assert "--no-cache-dir" in workflow
+    assert "--no-index" not in workflow
     assert "package-install-validation" in workflow
     assert "install-validation.txt" in workflow
     assert "api-smoke.txt" in workflow

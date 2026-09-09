@@ -14,6 +14,17 @@
       "category": "quantum",
       "icon": "⚛️",
       "priority": 40
+    },
+    {
+      "id": "quantum-randomness-service",
+      "title": "Quantum Randomness Service",
+      "description": "Authenticated bounded randomness API and provenance status",
+      "type": "flask_app",
+      "port": 8211,
+      "url": "http://127.0.0.1:8211",
+      "category": "quantum",
+      "icon": "⚛️",
+      "priority": 45
     }
   ]
 }

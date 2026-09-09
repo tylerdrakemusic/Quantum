@@ -7,8 +7,11 @@ DIAGRAM_NAMES = (
     "quantum-architecture.mmd",
     "quantum-db-schema.mmd",
     "quantum-derived-cache-integrity.mmd",
+    "quantum-randomness-service.mmd",
     "quantum-tech-stack.mmd",
 )
+
+
 def test_quantum_mermaid_sources_preserve_traceability() -> None:
     diagrams = {
         name: (DIAGRAMS_DIR / name).read_text(encoding="utf-8")
@@ -40,9 +43,16 @@ def test_quantum_manifest_enumerates_sources_and_cache_integrity_lineage() -> No
     assert set(records) == {f"diagrams/{name}" for name in DIAGRAM_NAMES}
     assert records["diagrams/quantum-architecture.mmd"]["lineage"] == {
         "parent": None,
-        "derived_views": ["diagrams/quantum-derived-cache-integrity.mmd"],
+        "derived_views": [
+            "diagrams/quantum-derived-cache-integrity.mmd",
+            "diagrams/quantum-randomness-service.mmd",
+        ],
     }
     assert records["diagrams/quantum-derived-cache-integrity.mmd"]["lineage"] == {
+        "parent": "diagrams/quantum-architecture.mmd",
+        "derived_views": [],
+    }
+    assert records["diagrams/quantum-randomness-service.mmd"]["lineage"] == {
         "parent": "diagrams/quantum-architecture.mmd",
         "derived_views": [],
     }
