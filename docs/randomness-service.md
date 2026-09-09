@@ -17,6 +17,11 @@ those credentials remain available only to the worker child.
 - The service accepts one Fly-managed bearer token, compares it in constant
   time, and never emits it, raw cache data, manifest hashes, or provider
   credentials in logs or status responses.
+- Production deployment requires both `FLY_BEARER_TOKEN` and
+  `QUANTUM_MANIFEST_SIGNING_KEY` in the operator environment. The deployment
+  script rejects missing values before invoking Fly and provisions them as
+  app secrets without printing or storing either value. `FLY_BEARER_TOKEN` is
+  the service credential, not the Fly operator credential.
 - Limits are 1 KiB per byte request, 8192 bits per bit request (the same 1 KiB
   byte-equivalent), 10 requests per minute, and 1 MiB per hour.
 
@@ -60,11 +65,14 @@ The refill worker reads the monthly UTC run from
 
 Set the IBM and Tigris credentials on the `quantum-randomness` app with `fly
 secrets set`; the machine runner strips them before starting the API child and
-passes them only to the refill worker. Set `QUANTUM_MANIFEST_SIGNING_KEY` in
-the operator environment and run `tools/deploy_randomness_service.ps1`, which
-forwards it to the one app without storing the value in source. Deployment
-creates exactly one machine and one mounted `quantum_randomness_data` volume;
-the machine runner then starts both sibling processes against that boundary.
+passes them only to the refill worker. Set both `FLY_BEARER_TOKEN` and
+`QUANTUM_MANIFEST_SIGNING_KEY` in the operator environment and run
+`tools/deploy_randomness_service.ps1`. The script validates both values before
+calling Fly, forwards them to the one app as secrets without storing either in
+source, and never uses or provisions the Fly operator credential as an app
+secret. Deployment creates exactly one machine and one mounted
+`quantum_randomness_data` volume; the machine runner then starts both sibling
+processes against that boundary.
 
 `boto3` is used only by the worker adapter. A refill is generated and signed,
 uploaded to the pending object, promoted to the stable key, and only then

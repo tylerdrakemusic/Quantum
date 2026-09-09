@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import tomllib
 
 import pytest
@@ -219,7 +221,42 @@ def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume()
     assert policy["shared_consumption_path"].startswith(mounts[policy["volume_source"]] + "/")
     assert "fly scale count 1" in deploy_script
     assert "fly deploy --config fly.toml" in deploy_script
+    assert "fly secrets import --app" in deploy_script
+    assert "FLY_BEARER_TOKEN" in deploy_script
     assert "QUANTUM_MANIFEST_SIGNING_KEY" in deploy_script
+    assert "FLY_API_TOKEN" not in deploy_script
+
+
+def test_production_deploy_rejects_missing_bearer_secret_before_fly_call(tmp_path):
+    policy = json.loads(Path("fly.api-policy.json").read_text(encoding="utf-8"))
+    deploy_script = Path("tools/deploy_randomness_service.ps1")
+    fly_log = tmp_path / "fly-called.txt"
+    fake_fly = tmp_path / "fly.cmd"
+    fake_fly.write_text(
+        f"@echo called>>\"{fly_log}\"\r\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["QUANTUM_MANIFEST_SIGNING_KEY"] = "signing-key-for-test-only"
+    environment.pop("FLY_BEARER_TOKEN", None)
+    environment["PATH"] = str(tmp_path) + os.pathsep + environment["PATH"]
+
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(deploy_script)],
+        cwd=Path.cwd(),
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not fly_log.exists()
+    assert "signing-key-for-test-only" not in result.stdout + result.stderr
+    assert policy["required_runtime_secrets"] == [
+        "FLY_BEARER_TOKEN",
+        "QUANTUM_MANIFEST_SIGNING_KEY",
+    ]
 
 
 def test_single_fly_machine_owns_api_and_worker_with_worker_only_credentials():

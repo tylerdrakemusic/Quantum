@@ -10,8 +10,16 @@ $signingKey = [Environment]::GetEnvironmentVariable("QUANTUM_MANIFEST_SIGNING_KE
 if ([string]::IsNullOrWhiteSpace($signingKey)) {
     throw "QUANTUM_MANIFEST_SIGNING_KEY must be provided through the operator environment"
 }
+$bearerToken = [Environment]::GetEnvironmentVariable("FLY_BEARER_TOKEN")
+if ([string]::IsNullOrWhiteSpace($bearerToken)) {
+    throw "FLY_BEARER_TOKEN must be provided through the operator environment"
+}
 
-fly secrets set --app $policy.app "QUANTUM_MANIFEST_SIGNING_KEY=$signingKey"
+$secretPayload = @(
+    "FLY_BEARER_TOKEN=$bearerToken"
+    "QUANTUM_MANIFEST_SIGNING_KEY=$signingKey"
+) -join "`n"
+$secretPayload | fly secrets import --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "API signing-key secret update failed"
 }

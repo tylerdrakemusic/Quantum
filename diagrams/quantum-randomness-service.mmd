@@ -4,6 +4,7 @@
 %% Scope: authenticated Fly.io API and worker-owned verified cache publication
 graph TB
     Client[Authenticated client<br/>Authorization: Bearer token]:::state
+    Secrets[Fly-managed runtime secrets<br/>FLY_BEARER_TOKEN + QUANTUM_MANIFEST_SIGNING_KEY]:::state
 
     subgraph Machine["One Fly.io machine · quantum-randomness · one mounted volume"]
         Gunicorn[Gunicorn<br/>0.0.0.0:8211]:::quantum
@@ -31,6 +32,7 @@ graph TB
     Provenance[Response provenance<br/>source + quantum_cache state]:::state
 
     Client --> Gunicorn
+    Secrets --> Gunicorn
     Gunicorn --> Flask
     Flask --> Auth
     Auth --> Refresh
