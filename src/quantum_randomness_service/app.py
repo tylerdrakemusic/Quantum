@@ -132,8 +132,14 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
                 store.refresh_from_url(app.config["QUANTUM_MANIFEST_URL"])
             except Exception:
                 pass
-        value, provenance = random_bytes(8, store)
-        result = minimum + (int.from_bytes(value, "big") % (maximum - minimum + 1))
+        span = maximum - minimum + 1
+        acceptance_limit = (1 << 64) - ((1 << 64) % span)
+        while True:
+            value, provenance = random_bytes(8, store)
+            candidate = int.from_bytes(value, "big")
+            if candidate < acceptance_limit:
+                break
+        result = minimum + (candidate % span)
         return jsonify({"value": result, "provenance": provenance})
 
     @app.get("/v1/bool")

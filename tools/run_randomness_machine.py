@@ -14,6 +14,10 @@ WORKER_ONLY_ENV = {
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
     "TIGRIS_ENDPOINT",
+    "QUANTUM_MANIFEST_SIGNING_KEY",
+    "QUANTUM_CACHE_DIR",
+    "QUANTUM_CACHE_CAPACITY_BITS",
+    "QUANTUM_REFILL_BITS",
 }
 
 
@@ -23,6 +27,12 @@ def api_environment(environment: dict[str, str] | None = None) -> dict[str, str]
     for name in WORKER_ONLY_ENV:
         values.pop(name, None)
     return values
+
+
+def worker_environment(environment: dict[str, str] | None = None) -> dict[str, str]:
+    """Return only provider, signing, and worker configuration variables."""
+    values = dict(environment or os.environ)
+    return {name: values[name] for name in WORKER_ONLY_ENV if name in values}
 
 
 def main() -> None:
@@ -44,7 +54,7 @@ def main() -> None:
     worker = subprocess.Popen(
         [sys.executable, "tools/run_randomness_worker.py"],
         cwd=ROOT,
-        env=dict(os.environ),
+        env=worker_environment(),
     )
     processes = (api, worker)
 

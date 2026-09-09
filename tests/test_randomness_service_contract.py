@@ -24,6 +24,7 @@ from quantum_randomness_service.worker import (
     next_scheduled_run,
     run_scheduled_worker,
 )
+from tools.run_randomness_machine import worker_environment
 
 
 @pytest.fixture()
@@ -61,6 +62,63 @@ def test_bits_integer_and_bool_endpoints_return_typed_json(client):
     assert len(bits.get_json()["bits"]) == 7
     assert 3 <= bounded.get_json()["value"] <= 8
     assert isinstance(boolean.get_json()["value"], bool)
+
+
+def test_ints_rejects_out_of_range_candidate_before_accepting_next_candidate(
+    client, monkeypatch
+):
+    candidates = iter(
+        [
+            ((1 << 64) - 1).to_bytes(8, "big"),
+            (1).to_bytes(8, "big"),
+        ]
+    )
+    calls = []
+
+    def fake_random_bytes(count, store):
+        calls.append(count)
+        return next(candidates), {"source": "test"}
+
+    monkeypatch.setattr("quantum_randomness_service.app.random_bytes", fake_random_bytes)
+
+    response = client.get(
+        "/v1/ints?min=0&max=2", headers={"Authorization": "Bearer test-token"}
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["value"] == 1
+    assert calls == [8, 8]
+
+
+def test_worker_environment_excludes_api_bearer_token_and_preserves_worker_credentials():
+    environment = {
+        "FLY_BEARER_TOKEN": "api-token",
+        "IBM_CLOUD_API_KEY": "ibm-key",
+        "IBM_QUANTUM_INSTANCE": "ibm-instance",
+        "AWS_ACCESS_KEY_ID": "tigris-access",
+        "AWS_SECRET_ACCESS_KEY": "tigris-secret",
+        "TIGRIS_ENDPOINT": "https://fly.storage.tigris.dev",
+        "QUANTUM_MANIFEST_SIGNING_KEY": "signing-key",
+        "QUANTUM_CACHE_DIR": "/data/verified",
+        "UNRELATED_SECRET": "must-not-pass",
+    }
+
+    worker = worker_environment(environment)
+
+    assert "FLY_BEARER_TOKEN" not in worker
+    assert "UNRELATED_SECRET" not in worker
+    assert worker == {
+        key: environment[key]
+        for key in (
+            "IBM_CLOUD_API_KEY",
+            "IBM_QUANTUM_INSTANCE",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "TIGRIS_ENDPOINT",
+            "QUANTUM_MANIFEST_SIGNING_KEY",
+            "QUANTUM_CACHE_DIR",
+        )
+    }
 
 
 def test_bits_endpoint_accepts_documented_maximum_and_rejects_above_it(client):
