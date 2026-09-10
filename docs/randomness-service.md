@@ -98,3 +98,56 @@ accepted into the local retained-generation file. Provider or storage failure
 therefore leaves the previous verified generation available. The worker logs
 only counts and lifecycle state, never credentials, bits, signatures, or
 manifest contents.
+
+## Operator setup and verification
+
+Before deployment, provision the single Fly machine with a persistent volume
+mounted at `/data` and the fixed Tigris bucket `quantum-randomness-cache`.
+The bucket must allow the worker's S3-compatible credentials to write
+`verified/generation.pending.json` and promote it to
+`verified/generation.json`; the API only needs HTTPS access to the published
+manifest URL. Review the [Fly.io application guide](https://fly.io/docs/),
+[Fly.io secrets guide](https://fly.io/docs/apps/secrets/),
+[Tigris documentation](https://www.tigrisdata.com/docs/), and
+[Tigris S3 compatibility guide](https://www.tigrisdata.com/docs/s3/) before
+provisioning.
+
+Keep credentials separated by role. `FLY_BEARER_TOKEN` is the consumer-facing
+API credential, while IBM Quantum and Tigris credentials are worker-only
+credentials. Credential rotation is role-specific: the signing key is an
+operator-managed verification credential, not a consumer token. Store each
+value in the appropriate Fly secret store, never in source, images, URLs,
+examples, or logs. Rotate the API token
+by issuing a new consumer token, updating the Fly secret, verifying a new
+request, and then revoking the old token. Rotate worker credentials and the
+signing key independently, then run a refill and verification before removing
+the prior value. See the [IBM Quantum documentation](https://quantum.cloud.ibm.com/docs)
+and [IBM Quantum platform](https://quantum.cloud.ibm.com/) for provider
+account and backend prerequisites.
+
+After deployment, verify the public surface and the protected surface
+separately:
+
+The public documentation endpoints are `GET /openapi.json`, `GET /docs`, and
+`GET /setup`. The `/setup` endpoint is documentation-only: it returns this
+Markdown guide and performs no setup action.
+
+```bash
+curl -fsS https://quantum-randomness.fly.dev/health
+curl -fsS https://quantum-randomness.fly.dev/v1/status
+curl -fsS https://quantum-randomness.fly.dev/openapi.json
+curl -fsS https://quantum-randomness.fly.dev/docs
+curl -fsS https://quantum-randomness.fly.dev/setup
+curl -i https://quantum-randomness.fly.dev/v1/bytes?n=1
+curl -fsS -H "Authorization: Bearer $FLY_BEARER_TOKEN" \
+  "https://quantum-randomness.fly.dev/v1/bytes?n=1"
+```
+
+The unauthenticated protected request must return `401`; the authenticated
+request must return a typed success object with `provenance`. Check the
+OpenAPI document for the 1 KiB, 8192-bit, integer-range, 10 requests per
+minute, 1 MiB per hour, validation, authentication, and rate-limit contracts.
+The interactive Swagger UI is a consumer for the published contract, not a
+credential management tool. There is no runtime setup, credential-creation,
+or bucket-provisioning HTTP endpoint; operators perform those actions through
+Fly, Tigris, and IBM Quantum tooling before starting the machine.
