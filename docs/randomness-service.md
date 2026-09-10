@@ -7,6 +7,24 @@ both processes use the same mounted volume and transactional SQLite ledger.
 The runner removes IBM and Tigris credentials from the API child environment;
 those credentials remain available only to the worker child.
 
+## Using the service
+
+The production base URL is `https://quantum-randomness.fly.dev`. Use HTTPS for
+all client traffic; plain HTTP is only suitable for local or temporary
+deployment checks. `GET /health` and `GET /v1/status` are public endpoints.
+The typed randomness endpoints require the service bearer token in the
+`Authorization` header:
+
+```bash
+curl https://quantum-randomness.fly.dev/health
+curl -H "Authorization: Bearer $FLY_BEARER_TOKEN" \
+  "https://quantum-randomness.fly.dev/v1/ints?min=0&max=99"
+```
+
+The token is the consumer credential represented by `FLY_BEARER_TOKEN`; keep
+it in the caller's secret store and never place its value in source, URLs, or
+logs.
+
 ## Contract
 
 - `GET /health` is public.
