@@ -16,6 +16,7 @@ primary_region = "iad"
 [[services]]
   internal_port = 8211
   protocol = "tcp"
+  processes = ["machine"]
   [[services.ports]]
     handlers = ["http"]
     port = 80
