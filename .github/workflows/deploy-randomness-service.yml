@@ -1,0 +1,116 @@
+name: Deploy Quantum randomness service
+
+on:
+  workflow_run:
+    workflows: ["test"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quantum-randomness-production
+  cancel-in-progress: false
+
+env:
+  FLY_APP: quantum-randomness
+  BASE_URL: https://quantum-randomness.fly.dev
+
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://quantum-randomness.fly.dev
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      FLY_BEARER_TOKEN: ${{ secrets.FLY_BEARER_TOKEN }}
+      QUANTUM_MANIFEST_SIGNING_KEY: ${{ secrets.QUANTUM_MANIFEST_SIGNING_KEY }}
+    steps:
+      - name: Check out the tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy from the repository root
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          Set-Location $env:GITHUB_WORKSPACE
+          $env:GITHUB_ACTIONS = "true"
+          & "$env:GITHUB_WORKSPACE/tools/deploy_randomness_service.ps1"
+
+      - name: Smoke test public and protected HTTPS contract, including OpenAPI 3.1
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "$tmp_dir"' EXIT
+          curl_args=(--proto '=https' --tlsv1.2 --silent --show-error --location)
+
+          check_status() {
+            local endpoint="$1"
+            local expected="$2"
+            local actual
+            actual="$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE_URL$endpoint")"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "Unexpected HTTP status for $endpoint: $actual"
+              return 1
+            fi
+          }
+
+          check_status /health 200
+          check_status /setup 200
+          check_status /openapi.json 200
+          check_status /docs 200
+
+          curl "${curl_args[@]}" "$BASE_URL/setup" -o "$tmp_dir/setup.md"
+          grep -Fq "Operator setup and verification" "$tmp_dir/setup.md"
+
+          curl "${curl_args[@]}" "$BASE_URL/openapi.json" -o "$tmp_dir/openapi.json"
+          python - "$tmp_dir/openapi.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as document:
+              contract = json.load(document)
+          if contract.get("openapi") != "3.1.0":
+              raise SystemExit("OpenAPI contract is not 3.1.0")
+          for path in ("/health", "/setup", "/openapi.json", "/docs", "/v1/bytes"):
+              if path not in contract.get("paths", {}):
+                  raise SystemExit(f"OpenAPI contract is missing {path}")
+          PY
+
+          unauthenticated_status="$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE_URL/v1/bytes?n=1")"
+          if [[ "$unauthenticated_status" != "401" ]]; then
+            echo "Protected endpoint accepted an unauthenticated request: $unauthenticated_status"
+            exit 1
+          fi
+
+          if [[ -n "${FLY_BEARER_TOKEN:-}" ]]; then
+            curl "${curl_args[@]}" \
+              -H "Authorization: Bearer ${FLY_BEARER_TOKEN}" \
+              "$BASE_URL/v1/bytes?n=1" -o "$tmp_dir/protected.json"
+            python - "$tmp_dir/protected.json" <<'PY'
+            import json
+            import sys
+
+            with open(sys.argv[1], encoding="utf-8") as response_file:
+                response = json.load(response_file)
+            if "provenance" not in response:
+                raise SystemExit("Authenticated protected response lacks provenance")
+            PY
+          else
+            echo "Authenticated protected smoke check skipped: FLY_BEARER_TOKEN is unavailable."
+          fi
