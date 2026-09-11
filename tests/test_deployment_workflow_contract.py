@@ -100,3 +100,4 @@ def test_randomness_service_image_includes_setup_guide():
     dockerfile = (WORKFLOW.parents[2] / "Dockerfile").read_text(encoding="utf-8")
 
     assert "COPY docs ./docs" in dockerfile
+    assert "SETUP_GUIDE_PATH=/app/docs/randomness-service.md" in dockerfile
