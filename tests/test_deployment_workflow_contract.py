@@ -94,3 +94,9 @@ def test_local_production_deployment_is_rejected_and_docs_define_environment_set
         "Local production deployment is not a supported path",
     ):
         assert marker in documentation
+
+
+def test_randomness_service_image_includes_setup_guide():
+    dockerfile = (WORKFLOW.parents[2] / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "COPY docs ./docs" in dockerfile
