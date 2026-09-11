@@ -375,11 +375,14 @@ def test_malformed_signed_manifest_reports_unavailable_instead_of_raising(
 def test_fly_config_uses_production_wsgi_and_worker_only_secret_contract():
     fly_config = Path("fly.toml").read_text(encoding="utf-8")
     machine_runner = Path("tools/run_randomness_machine.py").read_text(encoding="utf-8")
+    services = tomllib.loads(fly_config)["services"]
+    service_ports = {port["port"]: port["handlers"] for port in services[0]["ports"]}
     assert "gunicorn" in machine_runner
     assert "IBM_CLOUD_API_KEY" not in fly_config.split("[env]", 1)[1].split("[[mounts]]", 1)[0]
     assert "AWS_SECRET_ACCESS_KEY" not in fly_config.split("[env]", 1)[1].split("[[mounts]]", 1)[0]
     assert "QUANTUM_MANIFEST_SIGNING_KEY" in fly_config
     assert "machine" in fly_config
+    assert service_ports[443] == ["tls", "http"]
 
 
 def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume():
