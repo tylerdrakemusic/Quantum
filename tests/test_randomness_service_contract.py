@@ -396,7 +396,7 @@ def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume()
     assert policy["volume_source"] == "quantum_randomness_data"
     assert mounts[policy["volume_source"]] == "/data"
     assert policy["shared_consumption_path"].startswith(mounts[policy["volume_source"]] + "/")
-    assert "flyctl scale count 1" in deploy_script
+    assert "flyctl scale count 1 --process-group machine" in deploy_script
     assert "flyctl deploy --config fly.toml" in deploy_script
     assert "flyctl secrets import --app" in deploy_script
     assert "FLY_BEARER_TOKEN" in deploy_script

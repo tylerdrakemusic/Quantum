@@ -26,9 +26,9 @@ $secretPayload | flyctl secrets import --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "API signing-key secret update failed"
 }
-flyctl scale count 1 --app $policy.app
+flyctl scale count 1 --process-group machine --app $policy.app
 if ($LASTEXITCODE -ne 0) {
-    throw "fly scale count failed"
+    throw "flyctl scale count failed"
 }
 
 flyctl deploy --config fly.toml --app $policy.app
