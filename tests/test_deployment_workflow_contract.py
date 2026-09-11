@@ -22,12 +22,18 @@ def test_production_deployment_workflow_is_success_gated_and_environment_protect
 
 def test_deployment_workflow_uses_ci_root_and_existing_safe_entrypoint():
     workflow = WORKFLOW.read_text(encoding="utf-8")
+    deploy_script = (WORKFLOW.parents[2] / "tools" / "deploy_randomness_service.ps1").read_text(
+        encoding="utf-8"
+    )
 
     assert "actions/checkout@v4" in workflow
     assert "working-directory: ${{ github.workspace }}" in workflow
     assert "Set-Location $env:GITHUB_WORKSPACE" in workflow
     assert "tools/deploy_randomness_service.ps1" in workflow
     assert "superfly/flyctl-actions/setup-flyctl" in workflow
+    assert "flyctl secrets import" in deploy_script
+    assert "flyctl scale count" in deploy_script
+    assert "flyctl deploy" in deploy_script
 
 
 def test_deployment_workflow_does_not_trace_or_print_production_secrets():

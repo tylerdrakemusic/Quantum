@@ -22,16 +22,16 @@ $secretPayload = @(
     "FLY_BEARER_TOKEN=$bearerToken"
     "QUANTUM_MANIFEST_SIGNING_KEY=$signingKey"
 ) -join "`n"
-$secretPayload | fly secrets import --app $policy.app
+$secretPayload | flyctl secrets import --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "API signing-key secret update failed"
 }
-fly scale count 1 --app $policy.app
+flyctl scale count 1 --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "fly scale count failed"
 }
 
-fly deploy --config fly.toml --app $policy.app
+flyctl deploy --config fly.toml --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "fly deploy failed"
 }
