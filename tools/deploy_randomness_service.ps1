@@ -2,6 +2,9 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
+if ($env:GITHUB_ACTIONS -ne "true") {
+    throw "Production deployment is CI-only; use the protected GitHub Environment workflow"
+}
 $policy = Get-Content -Raw -Encoding UTF8 "fly.api-policy.json" | ConvertFrom-Json
 if ($policy.machine_count -ne 1) {
     throw "quantum-randomness requires exactly one API machine"
