@@ -90,6 +90,22 @@ def test_openapi_contract_and_swagger_ui_are_public_and_document_protected_opera
     assert "FLY_BEARER_TOKEN" not in serialized
 
 
+def test_setup_endpoint_uses_configured_guide_path(tmp_path):
+    guide = tmp_path / "randomness-service.md"
+    guide.write_text("configured setup guide", encoding="utf-8")
+    app = create_app(
+        {
+            "TESTING": True,
+            "SETUP_GUIDE_PATH": str(guide),
+        }
+    )
+
+    response = app.test_client().get("/setup")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "configured setup guide"
+
+
 def test_randomness_service_docs_include_operator_prerequisites_and_setup_endpoint():
     documentation = Path("docs/randomness-service.md").read_text(encoding="utf-8")
 
