@@ -98,15 +98,7 @@ jobs:
             curl "${curl_args[@]}" \
               -H "Authorization: Bearer ${FLY_BEARER_TOKEN}" \
               "$BASE_URL/v1/bytes?n=1" -o "$tmp_dir/protected.json"
-            python - "$tmp_dir/protected.json" <<'PY'
-            import json
-            import sys
-
-            with open(sys.argv[1], encoding="utf-8") as response_file:
-                response = json.load(response_file)
-            if "provenance" not in response:
-                raise SystemExit("Authenticated protected response lacks provenance")
-            PY
+            python -c 'import json, sys; response = json.load(open(sys.argv[1], encoding="utf-8")); raise SystemExit("Authenticated protected response lacks provenance") if "provenance" not in response else None' "$tmp_dir/protected.json"
           else
             echo "Authenticated protected smoke check skipped: FLY_BEARER_TOKEN is unavailable."
           fi
