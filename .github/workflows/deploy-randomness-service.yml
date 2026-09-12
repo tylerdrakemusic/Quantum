@@ -75,18 +75,7 @@ jobs:
           check_status /docs 200
 
           curl "${curl_args[@]}" "$BASE_URL/openapi.json" -o "$tmp_dir/openapi.json"
-          python - "$tmp_dir/openapi.json" <<'PY'
-          import json
-          import sys
-
-          with open(sys.argv[1], encoding="utf-8") as document:
-              contract = json.load(document)
-          if contract.get("openapi") != "3.1.0":
-              raise SystemExit("OpenAPI contract is not 3.1.0")
-          for path in ("/health", "/openapi.json", "/docs", "/v1/bytes"):
-              if path not in contract.get("paths", {}):
-                  raise SystemExit(f"OpenAPI contract is missing {path}")
-          PY
+          python -c 'import json, sys; contract = json.load(open(sys.argv[1], encoding="utf-8")); contract.get("openapi") != "3.1.0" and sys.exit("OpenAPI contract is not 3.1.0"); next((sys.exit(f"OpenAPI contract is missing {path}") for path in ("/health", "/openapi.json", "/docs", "/v1/bytes") if path not in contract.get("paths", {})), None)' "$tmp_dir/openapi.json"
 
           unauthenticated_status="$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE_URL/v1/bytes?n=1")"
           if [[ "$unauthenticated_status" != "401" ]]; then
@@ -98,15 +87,7 @@ jobs:
             curl "${curl_args[@]}" \
               -H "Authorization: Bearer ${FLY_BEARER_TOKEN}" \
               "$BASE_URL/v1/bytes?n=1" -o "$tmp_dir/protected.json"
-            python - "$tmp_dir/protected.json" <<'PY'
-            import json
-            import sys
-
-            with open(sys.argv[1], encoding="utf-8") as response_file:
-                response = json.load(response_file)
-            if "provenance" not in response:
-                raise SystemExit("Authenticated protected response lacks provenance")
-            PY
+            python -c 'import json, sys; response = json.load(open(sys.argv[1], encoding="utf-8")); "provenance" in response or sys.exit("Authenticated protected response lacks provenance")' "$tmp_dir/protected.json"
           else
             echo "Authenticated protected smoke check skipped: FLY_BEARER_TOKEN is unavailable."
           fi

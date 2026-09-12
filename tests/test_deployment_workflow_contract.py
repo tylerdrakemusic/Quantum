@@ -63,6 +63,7 @@ def test_deployment_workflow_does_not_trace_or_print_production_secrets():
 def test_deployment_workflow_smoke_tests_public_and_protected_contract():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
+    assert "<<'PY'" not in workflow
     for endpoint in ("/health", "/openapi.json", "/docs"):
         assert endpoint in workflow
     assert "--proto '=https'" in workflow
@@ -71,6 +72,7 @@ def test_deployment_workflow_smoke_tests_public_and_protected_contract():
     assert 'contract.get("openapi") != "3.1.0"' in workflow
     assert "/v1/bytes?n=1" in workflow
     assert "401" in workflow
+    assert '"provenance" in response' in workflow
     assert "FLY_BEARER_TOKEN:-" in workflow
     assert "skipped" in workflow.lower()
 
