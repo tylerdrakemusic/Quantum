@@ -2,6 +2,9 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
+if ($env:GITHUB_ACTIONS -ne "true") {
+    throw "Production deployment is CI-only; use the protected GitHub Environment workflow"
+}
 $policy = Get-Content -Raw -Encoding UTF8 "fly.api-policy.json" | ConvertFrom-Json
 if ($policy.machine_count -ne 1) {
     throw "quantum-randomness requires exactly one API machine"
@@ -19,16 +22,16 @@ $secretPayload = @(
     "FLY_BEARER_TOKEN=$bearerToken"
     "QUANTUM_MANIFEST_SIGNING_KEY=$signingKey"
 ) -join "`n"
-$secretPayload | fly secrets import --app $policy.app
+$secretPayload | flyctl secrets import --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "API signing-key secret update failed"
 }
-fly scale count 1 --app $policy.app
+flyctl scale count 1 --process-group machine --app $policy.app
 if ($LASTEXITCODE -ne 0) {
-    throw "fly scale count failed"
+    throw "flyctl scale count failed"
 }
 
-fly deploy --config fly.toml --app $policy.app
+flyctl deploy --config fly.toml --app $policy.app
 if ($LASTEXITCODE -ne 0) {
     throw "fly deploy failed"
 }

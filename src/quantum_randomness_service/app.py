@@ -13,7 +13,6 @@ from .provider import VerifiedCacheStore, random_bytes
 
 MAX_BYTES = 1024
 MAX_BITS = MAX_BYTES * 8
-SETUP_GUIDE_PATH = Path(__file__).resolve().parents[2] / "docs" / "randomness-service.md"
 
 
 def create_app(config: dict[str, Any] | None = None) -> Flask:
@@ -67,12 +66,6 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     @app.get("/docs")
     def docs() -> Response:
         return Response(SWAGGER_UI_HTML, mimetype="text/html")
-
-    @app.get("/setup")
-    def setup() -> Response:
-        return Response(
-            SETUP_GUIDE_PATH.read_text(encoding="utf-8"), mimetype="text/markdown"
-        )
 
     @app.get("/v1/status")
     def status() -> Any:

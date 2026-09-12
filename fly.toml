@@ -20,6 +20,9 @@ primary_region = "iad"
   [[services.ports]]
     handlers = ["http"]
     port = 80
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
 
 [[vm]]
   memory = "512mb"

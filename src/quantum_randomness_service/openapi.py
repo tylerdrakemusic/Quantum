@@ -50,14 +50,6 @@ def build_openapi_document() -> dict[str, Any]:
                     "responses": {"200": {"$ref": "#/components/responses/SwaggerUI"}},
                 }
             },
-            "/setup": {
-                "get": {
-                    "tags": ["Public"],
-                    "summary": "Read the operator setup guide",
-                    "operationId": "setup",
-                    "responses": {"200": {"$ref": "#/components/responses/SetupGuide"}},
-                }
-            },
             "/v1/bytes": {
                 "get": {
                     "tags": ["Randomness"],
@@ -226,10 +218,6 @@ def build_openapi_document() -> dict[str, Any]:
                 "SwaggerUI": {
                     "description": "Interactive Swagger UI HTML.",
                     "content": {"text/html": {"schema": {"type": "string"}}},
-                },
-                "SetupGuide": {
-                    "description": "Documentation-only operator setup guide.",
-                    "content": {"text/markdown": {"schema": {"type": "string"}}},
                 },
             },
         },

@@ -45,17 +45,11 @@ def test_health_and_status_are_public_and_status_does_not_leak_secret(client):
 def test_openapi_contract_and_swagger_ui_are_public_and_document_protected_operations(client):
     openapi_response = client.get("/openapi.json")
     docs_response = client.get("/docs")
-    setup_response = client.get("/setup")
 
     assert openapi_response.status_code == 200
     assert openapi_response.content_type.startswith("application/json")
     assert docs_response.status_code == 200
     assert "swagger-ui" in docs_response.get_data(as_text=True).lower()
-    assert setup_response.status_code == 200
-    assert setup_response.content_type == "text/markdown; charset=utf-8"
-    assert "Operator setup and verification" in setup_response.get_data(
-        as_text=True
-    )
 
     contract = openapi_response.get_json()
     assert contract["openapi"] == "3.1.0"
@@ -68,22 +62,12 @@ def test_openapi_contract_and_swagger_ui_are_public_and_document_protected_opera
         "/v1/bool",
         "/openapi.json",
         "/docs",
-        "/setup",
     }
     assert "bearerAuth" in contract["components"]["securitySchemes"]
     for path in ("/v1/bytes", "/v1/bits", "/v1/ints", "/v1/bool"):
         assert contract["paths"][path]["get"]["security"] == [{"bearerAuth": []}]
-    for path in ("/health", "/v1/status", "/openapi.json", "/docs", "/setup"):
+    for path in ("/health", "/v1/status", "/openapi.json", "/docs"):
         assert "security" not in contract["paths"][path]["get"]
-
-    setup_operation = contract["paths"]["/setup"]["get"]
-    assert setup_operation["summary"] == "Read the operator setup guide"
-    assert setup_operation["responses"]["200"]["$ref"] == (
-        "#/components/responses/SetupGuide"
-    )
-    assert contract["components"]["responses"]["SetupGuide"]["content"]["text/markdown"][
-        "schema"
-    ] == {"type": "string"}
 
     serialized = openapi_response.get_data(as_text=True)
     assert "FLY_BEARER_TOKEN" not in serialized
@@ -106,8 +90,6 @@ def test_randomness_service_docs_include_operator_prerequisites_and_setup_endpoi
     assert "bucket" in documentation.lower()
     assert "GET /openapi.json" in documentation
     assert "GET /docs" in documentation
-    assert "GET /setup" in documentation
-    assert "documentation-only" in documentation.lower()
     assert "no runtime setup" in documentation.lower()
 
 
@@ -375,11 +357,14 @@ def test_malformed_signed_manifest_reports_unavailable_instead_of_raising(
 def test_fly_config_uses_production_wsgi_and_worker_only_secret_contract():
     fly_config = Path("fly.toml").read_text(encoding="utf-8")
     machine_runner = Path("tools/run_randomness_machine.py").read_text(encoding="utf-8")
+    services = tomllib.loads(fly_config)["services"]
+    service_ports = {port["port"]: port["handlers"] for port in services[0]["ports"]}
     assert "gunicorn" in machine_runner
     assert "IBM_CLOUD_API_KEY" not in fly_config.split("[env]", 1)[1].split("[[mounts]]", 1)[0]
     assert "AWS_SECRET_ACCESS_KEY" not in fly_config.split("[env]", 1)[1].split("[[mounts]]", 1)[0]
     assert "QUANTUM_MANIFEST_SIGNING_KEY" in fly_config
     assert "machine" in fly_config
+    assert service_ports[443] == ["tls", "http"]
 
 
 def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume():
@@ -396,9 +381,9 @@ def test_api_deployment_contract_is_one_machine_with_shared_consumption_volume()
     assert policy["volume_source"] == "quantum_randomness_data"
     assert mounts[policy["volume_source"]] == "/data"
     assert policy["shared_consumption_path"].startswith(mounts[policy["volume_source"]] + "/")
-    assert "fly scale count 1" in deploy_script
-    assert "fly deploy --config fly.toml" in deploy_script
-    assert "fly secrets import --app" in deploy_script
+    assert "flyctl scale count 1 --process-group machine" in deploy_script
+    assert "flyctl deploy --config fly.toml" in deploy_script
+    assert "flyctl secrets import --app" in deploy_script
     assert "FLY_BEARER_TOKEN" in deploy_script
     assert "QUANTUM_MANIFEST_SIGNING_KEY" in deploy_script
     assert "FLY_API_TOKEN" not in deploy_script

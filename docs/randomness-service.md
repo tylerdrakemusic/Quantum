@@ -35,11 +35,14 @@ logs.
 - The service accepts one Fly-managed bearer token, compares it in constant
   time, and never emits it, raw cache data, manifest hashes, or provider
   credentials in logs or status responses.
-- Production deployment requires both `FLY_BEARER_TOKEN` and
-  `QUANTUM_MANIFEST_SIGNING_KEY` in the operator environment. The deployment
-  script rejects missing values before invoking Fly and provisions them as
-  app secrets without printing or storing either value. `FLY_BEARER_TOKEN` is
-  the service credential, not the Fly operator credential.
+- Production deployment is automatic after the `test` GitHub Actions workflow
+  succeeds on `main`, and is gated by approval for the protected GitHub
+  Environment named `production`. The workflow requires the Environment
+  secrets `FLY_API_TOKEN`, `FLY_BEARER_TOKEN`, and
+  `QUANTUM_MANIFEST_SIGNING_KEY`. The deployment script rejects missing values
+  before invoking Fly and provisions the two app secrets without printing or
+  storing either value. `FLY_BEARER_TOKEN` is the service credential, not the
+  Fly operator credential.
 - Limits are 1 KiB per byte request, 8192 bits per bit request (the same 1 KiB
   byte-equivalent), 10 requests per minute, and 1 MiB per hour.
 
@@ -83,12 +86,16 @@ The refill worker reads the monthly UTC run from
 
 Set the IBM and Tigris credentials on the `quantum-randomness` app with `fly
 secrets set`; the machine runner strips them before starting the API child and
-passes them only to the refill worker. Set both `FLY_BEARER_TOKEN` and
-`QUANTUM_MANIFEST_SIGNING_KEY` in the operator environment and run
-`tools/deploy_randomness_service.ps1`. The script validates both values before
-calling Fly, forwards them to the one app as secrets without storing either in
-source, and never uses or provisions the Fly operator credential as an app
-secret. Deployment creates exactly one machine and one mounted
+passes them only to the refill worker. Configure the GitHub `production`
+Environment with required reviewers, prevent self-approval where repository
+policy permits, and add the three required secrets named above. Do not add IBM
+or Tigris credentials to GitHub Actions; those worker-only values remain Fly
+app secrets configured through the existing operator process. The protected
+workflow validates the two app-secret values before calling Fly,
+forwards them to the one app as secrets without storing either in source, and
+never uses or provisions the Fly operator credential as an app secret.
+`tools/deploy_randomness_service.ps1` is a CI-only entrypoint and rejects local
+production execution. Deployment creates exactly one machine and one mounted
 `quantum_randomness_data` volume; the machine runner then starts both sibling
 processes against that boundary.
 
@@ -125,19 +132,37 @@ the prior value. See the [IBM Quantum documentation](https://quantum.cloud.ibm.c
 and [IBM Quantum platform](https://quantum.cloud.ibm.com/) for provider
 account and backend prerequisites.
 
+## GitHub deployment and rollback
+
+The `Deploy Quantum randomness service` workflow runs automatically from the
+tested `main` commit when the existing `test` workflow completes successfully.
+It can also be started manually from the `main` branch with
+`workflow_dispatch`; both paths pause at the protected `production`
+Environment approval gate. The post-deploy smoke test requires HTTPS with
+valid TLS, checks `/health`, `/openapi.json`, and `/docs`, validates
+OpenAPI 3.1, and confirms that an unauthenticated protected request returns
+`401`. It uses `FLY_BEARER_TOKEN` for the authenticated check
+when that Environment secret is available and otherwise records a skip without
+inventing a token.
+
+Local production deployment is not a supported path. To redeploy, approve a
+new successful `main` run or use the controlled manual dispatch. To roll back,
+deploy a known-good commit through the same workflow and approval gate, then
+rerun the smoke test. Do not run the deployment script directly on a developer
+machine. See the [Fly.io deployment guide](https://fly.io/docs/launch/),
+[Fly.io secrets guide](https://fly.io/docs/apps/secrets/), and
+[Fly.io rollback guide](https://fly.io/docs/reference/flyctl/fly-deploy/#rollback).
+
 After deployment, verify the public surface and the protected surface
 separately:
 
-The public documentation endpoints are `GET /openapi.json`, `GET /docs`, and
-`GET /setup`. The `/setup` endpoint is documentation-only: it returns this
-Markdown guide and performs no setup action.
+The public documentation endpoints are `GET /openapi.json` and `GET /docs`.
 
 ```bash
 curl -fsS https://quantum-randomness.fly.dev/health
 curl -fsS https://quantum-randomness.fly.dev/v1/status
 curl -fsS https://quantum-randomness.fly.dev/openapi.json
 curl -fsS https://quantum-randomness.fly.dev/docs
-curl -fsS https://quantum-randomness.fly.dev/setup
 curl -i https://quantum-randomness.fly.dev/v1/bytes?n=1
 curl -fsS -H "Authorization: Bearer $FLY_BEARER_TOKEN" \
   "https://quantum-randomness.fly.dev/v1/bytes?n=1"
