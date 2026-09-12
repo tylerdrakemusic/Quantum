@@ -71,12 +71,8 @@ jobs:
           }
 
           check_status /health 200
-          check_status /setup 200
           check_status /openapi.json 200
           check_status /docs 200
-
-          curl "${curl_args[@]}" "$BASE_URL/setup" -o "$tmp_dir/setup.md"
-          grep -Fq "Operator setup and verification" "$tmp_dir/setup.md"
 
           curl "${curl_args[@]}" "$BASE_URL/openapi.json" -o "$tmp_dir/openapi.json"
           python - "$tmp_dir/openapi.json" <<'PY'
@@ -87,7 +83,7 @@ jobs:
               contract = json.load(document)
           if contract.get("openapi") != "3.1.0":
               raise SystemExit("OpenAPI contract is not 3.1.0")
-          for path in ("/health", "/setup", "/openapi.json", "/docs", "/v1/bytes"):
+          for path in ("/health", "/openapi.json", "/docs", "/v1/bytes"):
               if path not in contract.get("paths", {}):
                   raise SystemExit(f"OpenAPI contract is missing {path}")
           PY

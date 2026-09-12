@@ -45,17 +45,11 @@ def test_health_and_status_are_public_and_status_does_not_leak_secret(client):
 def test_openapi_contract_and_swagger_ui_are_public_and_document_protected_operations(client):
     openapi_response = client.get("/openapi.json")
     docs_response = client.get("/docs")
-    setup_response = client.get("/setup")
 
     assert openapi_response.status_code == 200
     assert openapi_response.content_type.startswith("application/json")
     assert docs_response.status_code == 200
     assert "swagger-ui" in docs_response.get_data(as_text=True).lower()
-    assert setup_response.status_code == 200
-    assert setup_response.content_type == "text/markdown; charset=utf-8"
-    assert "Operator setup and verification" in setup_response.get_data(
-        as_text=True
-    )
 
     contract = openapi_response.get_json()
     assert contract["openapi"] == "3.1.0"
@@ -68,42 +62,16 @@ def test_openapi_contract_and_swagger_ui_are_public_and_document_protected_opera
         "/v1/bool",
         "/openapi.json",
         "/docs",
-        "/setup",
     }
     assert "bearerAuth" in contract["components"]["securitySchemes"]
     for path in ("/v1/bytes", "/v1/bits", "/v1/ints", "/v1/bool"):
         assert contract["paths"][path]["get"]["security"] == [{"bearerAuth": []}]
-    for path in ("/health", "/v1/status", "/openapi.json", "/docs", "/setup"):
+    for path in ("/health", "/v1/status", "/openapi.json", "/docs"):
         assert "security" not in contract["paths"][path]["get"]
-
-    setup_operation = contract["paths"]["/setup"]["get"]
-    assert setup_operation["summary"] == "Read the operator setup guide"
-    assert setup_operation["responses"]["200"]["$ref"] == (
-        "#/components/responses/SetupGuide"
-    )
-    assert contract["components"]["responses"]["SetupGuide"]["content"]["text/markdown"][
-        "schema"
-    ] == {"type": "string"}
 
     serialized = openapi_response.get_data(as_text=True)
     assert "FLY_BEARER_TOKEN" not in serialized
     assert "FLY_BEARER_TOKEN" not in serialized
-
-
-def test_setup_endpoint_uses_configured_guide_path(tmp_path):
-    guide = tmp_path / "randomness-service.md"
-    guide.write_text("configured setup guide", encoding="utf-8")
-    app = create_app(
-        {
-            "TESTING": True,
-            "SETUP_GUIDE_PATH": str(guide),
-        }
-    )
-
-    response = app.test_client().get("/setup")
-
-    assert response.status_code == 200
-    assert response.get_data(as_text=True) == "configured setup guide"
 
 
 def test_randomness_service_docs_include_operator_prerequisites_and_setup_endpoint():
@@ -122,8 +90,6 @@ def test_randomness_service_docs_include_operator_prerequisites_and_setup_endpoi
     assert "bucket" in documentation.lower()
     assert "GET /openapi.json" in documentation
     assert "GET /docs" in documentation
-    assert "GET /setup" in documentation
-    assert "documentation-only" in documentation.lower()
     assert "no runtime setup" in documentation.lower()
 
 
@@ -217,7 +183,6 @@ def test_machine_environments_split_api_auth_and_verified_cache_configuration(tm
         "QUANTUM_MANIFEST_SIGNING_KEY": "signing-key",
         "QUANTUM_CACHE_DIR": str(tmp_path),
         "QUANTUM_MANIFEST_URL": "https://fly.storage.tigris.dev/manifest.json",
-        "SETUP_GUIDE_PATH": "/app/docs/randomness-service.md",
         "QUANTUM_CACHE_CAPACITY_BITS": "4096",
         "QUANTUM_REFILL_BITS": "2048",
         "UNRELATED_SECRET": "must-not-pass",
@@ -228,7 +193,6 @@ def test_machine_environments_split_api_auth_and_verified_cache_configuration(tm
         "QUANTUM_MANIFEST_SIGNING_KEY": "signing-key",
         "QUANTUM_CACHE_DIR": str(tmp_path),
         "QUANTUM_MANIFEST_URL": "https://fly.storage.tigris.dev/manifest.json",
-        "SETUP_GUIDE_PATH": "/app/docs/randomness-service.md",
     }
     assert worker_environment(environment) == {
         "IBM_CLOUD_API_KEY": "ibm-key",

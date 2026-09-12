@@ -63,13 +63,12 @@ def test_deployment_workflow_does_not_trace_or_print_production_secrets():
 def test_deployment_workflow_smoke_tests_public_and_protected_contract():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    for endpoint in ("/health", "/setup", "/openapi.json", "/docs"):
+    for endpoint in ("/health", "/openapi.json", "/docs"):
         assert endpoint in workflow
     assert "--proto '=https'" in workflow
     assert "--tlsv1.2" in workflow
     assert "OpenAPI 3.1" in workflow
     assert 'contract.get("openapi") != "3.1.0"' in workflow
-    assert "Operator setup and verification" in workflow
     assert "/v1/bytes?n=1" in workflow
     assert "401" in workflow
     assert "FLY_BEARER_TOKEN:-" in workflow
@@ -95,9 +94,3 @@ def test_local_production_deployment_is_rejected_and_docs_define_environment_set
     ):
         assert marker in documentation
 
-
-def test_randomness_service_image_includes_setup_guide():
-    dockerfile = (WORKFLOW.parents[2] / "Dockerfile").read_text(encoding="utf-8")
-
-    assert "COPY docs ./docs" in dockerfile
-    assert "SETUP_GUIDE_PATH=/app/docs/randomness-service.md" in dockerfile
