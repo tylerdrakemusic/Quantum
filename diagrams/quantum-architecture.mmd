@@ -1,6 +1,6 @@
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a2e3a', 'primaryTextColor': '#d0ecf8', 'edgeLabelBackground': '#0f1318', 'lineColor': '#4a7a9a'}}}%%
 %% is_derived_view=false
-%% Traceability.derived_views: diagrams/quantum-derived-cache-integrity.mmd, diagrams/quantum-randomness-service.mmd
+%% Traceability.derived_views: diagrams/quantum-derived-cache-integrity.mmd, diagrams/quantum-randomness-service.mmd, diagrams/quantum-package-compatibility.mmd
 graph TB
     Shor[Shor benchmark<br/>tools/run_shors_bench.py]:::quantum
     VQE[VQE benchmark<br/>tools/bench_vqe.py]:::quantum
@@ -12,28 +12,20 @@ graph TB
     Tolerance[Versioned tolerance contract<br/>2026-09-05 · absolute + relative]:::state
     RuntimeCapture[IBM Runtime capture<br/>credential-safe metadata]:::ext
     RuntimePolicy[Bounded resubmission policy<br/>operator approval + quota gate]:::state
-    Manifest[Versioned benchmark manifest<br/>manifest_version 1.0]:::state
-    Sections[identity · execution · backend<br/>configuration · result]:::state
-    Evidence[Timestamp + evidence references<br/>paths or identifiers]:::state
+    Manifest[Versioned benchmark manifest<br/>manifest_version 1.0<br/>identity · execution · backend<br/>configuration · result · evidence]:::state
     QuantumDB[(quantumpsi.db<br/>SQLCipher)]:::db
     ReplayRows[benchmark_replays<br/>normalized replay rows]:::db
     Legacy[Historical benchmark rows<br/>unchanged source data]:::db
     Normalize[Dashboard legacy normalization<br/>provenance_status = legacy]:::quantum
     Dashboard[reports/benchmark_dashboard.html<br/>generated dashboard]:::store
     Backends[IBM Quantum + local Aer<br/>configured experiment backends]:::ext
-    InstalledPackage[Installed quantum-toolkit distribution<br/>wheel or source distribution]:::state
-    PublicAPI[quantum_toolkit<br/>stable installed public API]:::quantum
-    LegacyAPI[quantum_rt<br/>deprecated compatibility shim]:::state
-    RuntimeAPI[utils.quantum_rt<br/>legacy implementation]:::quantum
-    ConsumerSmoke[Isolated CI consumer<br/>package_smoke.py]:::state
+    PackageCompat[Derived package compatibility view<br/>installed API + smoke boundary]:::state
     Shor --> Contract
     VQE --> Contract
     QAOA --> Contract
     QEC --> Contract
     Kernel --> Contract
     Contract ==> Manifest
-    Manifest --> Sections
-    Manifest --> Evidence
     Contract --> Replay
     Replay --> Tolerance
     Replay ==> ReplayRows
@@ -47,12 +39,7 @@ graph TB
     Legacy --> Normalize
     Normalize --> Dashboard
     QuantumDB --> Dashboard
-    InstalledPackage --> PublicAPI
-    InstalledPackage --> LegacyAPI
-    PublicAPI --> RuntimeAPI
-    LegacyAPI -.->|"deprecated compatibility boundary"| PublicAPI
-    ConsumerSmoke --> PublicAPI
-    ConsumerSmoke --> LegacyAPI
+    PackageCompat -.->|"see derived view"| Manifest
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
 classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
