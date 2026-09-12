@@ -139,9 +139,9 @@ tested `main` commit when the existing `test` workflow completes successfully.
 It can also be started manually from the `main` branch with
 `workflow_dispatch`; both paths pause at the protected `production`
 Environment approval gate. The post-deploy smoke test requires HTTPS with
-valid TLS, checks `/health`, `/setup`, `/openapi.json`, and `/docs`, validates
-OpenAPI 3.1 and setup markers, and confirms that an unauthenticated protected
-request returns `401`. It uses `FLY_BEARER_TOKEN` for the authenticated check
+valid TLS, checks `/health`, `/openapi.json`, and `/docs`, validates
+OpenAPI 3.1, and confirms that an unauthenticated protected request returns
+`401`. It uses `FLY_BEARER_TOKEN` for the authenticated check
 when that Environment secret is available and otherwise records a skip without
 inventing a token.
 
@@ -156,16 +156,13 @@ machine. See the [Fly.io deployment guide](https://fly.io/docs/launch/),
 After deployment, verify the public surface and the protected surface
 separately:
 
-The public documentation endpoints are `GET /openapi.json`, `GET /docs`, and
-`GET /setup`. The `/setup` endpoint is documentation-only: it returns this
-Markdown guide and performs no setup action.
+The public documentation endpoints are `GET /openapi.json` and `GET /docs`.
 
 ```bash
 curl -fsS https://quantum-randomness.fly.dev/health
 curl -fsS https://quantum-randomness.fly.dev/v1/status
 curl -fsS https://quantum-randomness.fly.dev/openapi.json
 curl -fsS https://quantum-randomness.fly.dev/docs
-curl -fsS https://quantum-randomness.fly.dev/setup
 curl -i https://quantum-randomness.fly.dev/v1/bytes?n=1
 curl -fsS -H "Authorization: Bearer $FLY_BEARER_TOKEN" \
   "https://quantum-randomness.fly.dev/v1/bytes?n=1"
