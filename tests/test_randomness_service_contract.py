@@ -217,6 +217,7 @@ def test_machine_environments_split_api_auth_and_verified_cache_configuration(tm
         "QUANTUM_MANIFEST_SIGNING_KEY": "signing-key",
         "QUANTUM_CACHE_DIR": str(tmp_path),
         "QUANTUM_MANIFEST_URL": "https://fly.storage.tigris.dev/manifest.json",
+        "SETUP_GUIDE_PATH": "/app/docs/randomness-service.md",
         "QUANTUM_CACHE_CAPACITY_BITS": "4096",
         "QUANTUM_REFILL_BITS": "2048",
         "UNRELATED_SECRET": "must-not-pass",
@@ -227,6 +228,7 @@ def test_machine_environments_split_api_auth_and_verified_cache_configuration(tm
         "QUANTUM_MANIFEST_SIGNING_KEY": "signing-key",
         "QUANTUM_CACHE_DIR": str(tmp_path),
         "QUANTUM_MANIFEST_URL": "https://fly.storage.tigris.dev/manifest.json",
+        "SETUP_GUIDE_PATH": "/app/docs/randomness-service.md",
     }
     assert worker_environment(environment) == {
         "IBM_CLOUD_API_KEY": "ibm-key",
