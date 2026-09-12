@@ -1,12 +1,13 @@
 import json
 from pathlib import Path
 
-import sys
-
-
-sys.path.insert(0, r"F:\⊕Workspace")
-
-from src.utils.diagram_budgets import DiagramCategory, DiagramSpec, Traceability, measure_source, validate_diagram
+from src.utils.diagram_budgets import (
+    DiagramCategory,
+    DiagramSpec,
+    Traceability,
+    measure_source,
+    validate_diagram,
+)
 
 
 DIAGRAMS_DIR = Path(__file__).parents[1] / "diagrams"
