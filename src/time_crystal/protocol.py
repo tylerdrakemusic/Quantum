@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
+
+
+class ProtocolValidationError(ValueError):
+    pass
+
+
+class ValidationStatus(str, Enum):
+    CANDIDATE = "candidate"
+    INCONCLUSIVE = "inconclusive"
+    INVALID = "invalid"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class FloquetIsingProtocol:
+    system_size: int
+    periods: int
+    repetitions: int
+    pulse_angle: float
+    interaction_strength: float
+    disorder_strength: float
+    observable: str = "magnetization_z"
+
+    def __post_init__(self) -> None:
+        if isinstance(self.system_size, bool) or not 2 <= self.system_size <= 10:
+            raise ProtocolValidationError("system_size must be an integer from 2 through 10")
+        if isinstance(self.periods, bool) or not 1 <= self.periods <= 4096:
+            raise ProtocolValidationError("periods must be an integer from 1 through 4096")
+        if isinstance(self.repetitions, bool) or not 1 <= self.repetitions <= 4096:
+            raise ProtocolValidationError("repetitions must be an integer from 1 through 4096")
+        for name, value in (
+            ("pulse_angle", self.pulse_angle),
+            ("interaction_strength", self.interaction_strength),
+            ("disorder_strength", self.disorder_strength),
+        ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ProtocolValidationError(f"{name} must be a finite number")
+        if not 0.0 <= self.disorder_strength <= 1.0:
+            raise ProtocolValidationError("disorder_strength must be between 0 and 1")
+        if self.observable != "magnetization_z":
+            raise ProtocolValidationError("observable must be magnetization_z")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "system_size": self.system_size,
+            "periods": self.periods,
+            "repetitions": self.repetitions,
+            "pulse_angle": self.pulse_angle,
+            "interaction_strength": self.interaction_strength,
+            "disorder_strength": self.disorder_strength,
+            "observable": self.observable,
+        }
+
+    @property
+    def digest(self) -> str:
+        encoded = json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+
+@dataclass(frozen=True)
+class Provenance:
+    capability_version: str
+    evidence_schema_version: str
+    protocol_digest: str
+    source: str
+    seed: int | None
+
+
+@dataclass(frozen=True)
+class ResponseTrace:
+    periods: int
+    values: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class Diagnostic:
+    status: str
+    metric: float | None
+    reason: str
+
+
+@dataclass(frozen=True)
+class Diagnostics:
+    subharmonic_response: Diagnostic
+    evidence_limitations: Diagnostic
+
+
+@dataclass(frozen=True)
+class EvidenceUnavailable:
+    reason: str
+    source: str

@@ -19,7 +19,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["quantum_toolkit*", "quantum_randomness_service*", "utils*"]
+include = ["quantum_toolkit*", "quantum_randomness_service*", "time_crystal*", "utils*"]
 
 [tool.setuptools]
 py-modules = ["quantum_rt"]
