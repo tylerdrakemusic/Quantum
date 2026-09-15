@@ -20,6 +20,7 @@ graph TB
     Dashboard[reports/benchmark_dashboard.html<br/>generated dashboard]:::store
     Backends[IBM Quantum + local Aer<br/>configured experiment backends]:::ext
     PackageCompat[Derived package compatibility view<br/>installed API + smoke boundary]:::state
+    TimeCrystal[Isolated local-only time-crystal capability<br/>src/time_crystal<br/>Floquet Ising dynamics + typed evidence]:::quantum
     Shor --> Contract
     VQE --> Contract
     QAOA --> Contract
