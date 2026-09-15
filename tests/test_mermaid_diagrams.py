@@ -26,7 +26,7 @@ EXPECTED_MANIFEST = {
                 "diagrams/quantum-package-compatibility.mmd",
             ],
         },
-        "metrics": {"utf8_characters": 3015, "utf8_bytes": 3020, "nodes": 33, "edges": 20},
+        "metrics": {"utf8_characters": 3152, "utf8_bytes": 3157, "nodes": 34, "edges": 20},
     },
     "diagrams/quantum-db-schema.mmd": {
         "kind": "database-schema",
