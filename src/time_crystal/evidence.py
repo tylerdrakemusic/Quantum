@@ -10,6 +10,7 @@ from .protocol import (
     EvidenceUnavailable,
     Provenance,
     ResponseTrace,
+    NoiseConfig,
     ValidationStatus,
 )
 
@@ -30,6 +31,7 @@ class EvidenceBundle:
     control_trace: ResponseTrace | None = None
     robustness: dict[str, Any] | None = None
     controls: dict[str, Any] | None = None
+    noise: NoiseConfig | None = None
 
     @classmethod
     def unavailable(cls, *, reason: str, source: str) -> EvidenceBundle:
@@ -45,7 +47,7 @@ class EvidenceBundle:
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "schema_version": "v1",
+            "schema_version": self.provenance.evidence_schema_version,
             "status": self.status.value,
             "provenance": {
                 "capability_version": self.provenance.capability_version,
@@ -53,6 +55,8 @@ class EvidenceBundle:
                 "protocol_digest": self.provenance.protocol_digest,
                 "source": self.provenance.source,
                 "seed": self.provenance.seed,
+                "simulator": self.provenance.simulator,
+                "noise_config_digest": self.provenance.noise_config_digest,
             },
             "response_trace": None
             if self.response_trace is None
@@ -84,6 +88,9 @@ class EvidenceBundle:
                         ("shuffled_null", self.diagnostics.shuffled_null),
                         ("lifetime", self.diagnostics.lifetime),
                         ("non_period_doubled_control", self.diagnostics.non_period_doubled_control),
+                        ("baseline_response", self.diagnostics.baseline_response),
+                        ("noise_dominance", self.diagnostics.noise_dominance),
+                        ("finite_size_false_positive", self.diagnostics.finite_size_false_positive),
                     )
                     if diagnostic is not None
                 },
@@ -95,6 +102,7 @@ class EvidenceBundle:
             else {"reason": self.evidence.reason, "source": self.evidence.source},
             "robustness": self.robustness,
             "controls": self.controls,
+            "noise": None if self.noise is None else self.noise.as_dict(),
         }
         return payload
 
@@ -104,7 +112,8 @@ class EvidenceBundle:
     @classmethod
     def from_json(cls, value: str) -> EvidenceBundle:
         payload = json.loads(value)
-        if payload.get("schema_version") != "v1":
+        schema_version = payload.get("schema_version")
+        if schema_version not in ("v1", "v2"):
             raise UnsupportedSchemaVersion(str(payload.get("schema_version")))
         provenance_data = payload["provenance"]
         trace_data = payload.get("response_trace")
@@ -120,6 +129,9 @@ class EvidenceBundle:
                 _optional_diagnostic(diagnostics_data, "shuffled_null"),
                 _optional_diagnostic(diagnostics_data, "lifetime"),
                 _optional_diagnostic(diagnostics_data, "non_period_doubled_control"),
+                _optional_diagnostic(diagnostics_data, "baseline_response"),
+                _optional_diagnostic(diagnostics_data, "noise_dominance"),
+                _optional_diagnostic(diagnostics_data, "finite_size_false_positive"),
             )
         evidence = None if evidence_data is None else EvidenceUnavailable(**evidence_data)
         return cls(
@@ -147,6 +159,7 @@ class EvidenceBundle:
             evidence=evidence,
             robustness=payload.get("robustness"),
             controls=payload.get("controls"),
+            noise=None if payload.get("noise") is None else NoiseConfig(**payload["noise"]),
         )
 
     @staticmethod

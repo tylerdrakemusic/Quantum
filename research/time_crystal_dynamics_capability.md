@@ -15,6 +15,26 @@ Quantum job, or modify the randomness, cache, or benchmark pipelines. A strong
 simulation result would be evidence that the selected model and analysis are
 internally consistent, not evidence of quantum advantage.
 
+## Stage 2 Local Noisy Slice
+
+The Quantum implementation now includes a local Aer-style adapter in
+`src/time_crystal`. `NoiseConfig` is an immutable typed configuration limited
+to depolarizing and readout-flip probabilities. Runs require an explicit seed,
+use the frozen Floquet protocol, and record the simulator identity, protocol
+digest, noise digest, and reproducibility policy in a versioned `v2` evidence
+bundle.
+
+Noisy evidence is never merged with the ideal baseline. The noisy bundle keeps
+`source=aer_noisy_simulation` and records the ideal comparison only as a
+diagnostic baseline. Diagnostics report baseline response, noise dominance,
+subharmonic lifetime, and finite-size false-positive risk. A missing or failed
+control produces `inconclusive` or `invalid`; this slice cannot emit
+`supported`. Existing `v1` ideal bundles remain readable.
+
+This is still a finite-size classical simulation. It is not an IBM hardware
+path, does not model coherent over-rotation or heating/leakage, and does not
+establish a thermodynamic time crystal or quantum advantage.
+
 ## Capability Boundary
 
 The proposed capability is `time_crystal_dynamics`, owned by the Quantum

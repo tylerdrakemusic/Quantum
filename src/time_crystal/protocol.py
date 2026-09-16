@@ -14,6 +14,7 @@ class ProtocolValidationError(ValueError):
 
 class ValidationStatus(str, Enum):
     CANDIDATE = "candidate"
+    SUPPORTED = "supported"
     INCONCLUSIVE = "inconclusive"
     INVALID = "invalid"
     UNAVAILABLE = "unavailable"
@@ -65,6 +66,37 @@ class FloquetIsingProtocol:
         return hashlib.sha256(encoded).hexdigest()
 
 
+@dataclass(frozen=True)
+class NoiseConfig:
+    depolarizing_probability: float = 0.0
+    readout_flip_probability: float = 0.0
+    model_version: str = "depolarizing_readout_v1"
+
+    def __post_init__(self) -> None:
+        if self.model_version != "depolarizing_readout_v1":
+            raise ProtocolValidationError("model_version must be depolarizing_readout_v1")
+        for name, value in (
+            ("depolarizing_probability", self.depolarizing_probability),
+            ("readout_flip_probability", self.readout_flip_probability),
+        ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ProtocolValidationError(f"{name} must be a finite number")
+            if not 0.0 <= value <= 1.0:
+                raise ProtocolValidationError(f"{name} must be between 0 and 1")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "depolarizing_probability": self.depolarizing_probability,
+            "readout_flip_probability": self.readout_flip_probability,
+            "model_version": self.model_version,
+        }
+
+    @property
+    def digest(self) -> str:
+        encoded = json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+
 VALID_INITIAL_STATES = ("all_zero", "all_one", "alternating")
 
 
@@ -75,6 +107,8 @@ class Provenance:
     protocol_digest: str
     source: str
     seed: int | None
+    simulator: str = "python_statevector"
+    noise_config_digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +139,9 @@ class Diagnostics:
     shuffled_null: Diagnostic | None = None
     lifetime: Diagnostic | None = None
     non_period_doubled_control: Diagnostic | None = None
+    baseline_response: Diagnostic | None = None
+    noise_dominance: Diagnostic | None = None
+    finite_size_false_positive: Diagnostic | None = None
 
 
 @dataclass(frozen=True)
