@@ -57,14 +57,52 @@ def test_seeded_ideal_replay_is_identical_and_does_not_use_randomness_cache(
     assert first.reproducibility["seed_policy"] == "explicit_local_seed"
 
 
+def test_projective_measurements_provide_per_period_statistics_and_replay() -> None:
+    first = run_floquet_ising(_protocol(repetitions=32, pulse_angle=2.8), seed=41)
+    second = run_floquet_ising(_protocol(repetitions=32, pulse_angle=2.8), seed=41)
+
+    assert first == second
+    assert first.response_trace.means == first.response_trace.values
+    assert len(first.response_trace.means) == 16
+    assert len(first.response_trace.uncertainties) == 16
+    assert first.response_trace.shots_per_period == 32
+    assert any(uncertainty > 0.0 for uncertainty in first.response_trace.uncertainties)
+    assert first.reproducibility["measurement_policy"] == "seeded_projective_from_ideal_probabilities"
+
+
 def test_validator_reports_independent_subharmonic_and_evidence_diagnostics() -> None:
     result = run_floquet_ising(_protocol(), seed=7)
 
     assert result.status is ValidationStatus.CANDIDATE
     assert result.diagnostics.subharmonic_response.status == "pass"
-    assert result.diagnostics.evidence_limitations.status == "insufficient_controls"
+    assert result.diagnostics.spectral_half_frequency.status == "pass"
+    assert result.diagnostics.shuffled_null.status == "pass"
+    assert result.diagnostics.lifetime.status == "pass"
+    assert result.diagnostics.non_period_doubled_control.status == "pass"
+    assert result.diagnostics.shuffled_null.metadata["permutations"] == 64
+    assert result.diagnostics.shuffled_null.metadata["seed_policy"] == "derived_from_run_seed"
     assert result.response_trace.periods == 16
     assert len(result.response_trace.values) == 16
+
+
+def test_lifetime_is_contiguous_relative_amplitude_with_explicit_metadata() -> None:
+    result = run_floquet_ising(_protocol(), seed=7)
+
+    lifetime = result.diagnostics.lifetime
+    assert lifetime.metric == 16
+    assert lifetime.metadata["threshold"] == 0.5
+    assert lifetime.metadata["minimum_window"] == 4
+    assert lifetime.metadata["definition"] == "contiguous_relative_amplitude"
+
+
+def test_non_period_doubled_control_rejects_a_false_positive_fixture() -> None:
+    result = run_floquet_ising(_protocol(pulse_angle=0.0), seed=7)
+
+    assert result.status is ValidationStatus.INCONCLUSIVE
+    assert result.diagnostics.non_period_doubled_control.status == "pass"
+    assert result.control_trace.periods == result.response_trace.periods
+    assert result.control_trace.values == (1.0,) * result.response_trace.periods
+    assert "subharmonic_response_failed" in result.failure_modes
 
 
 def test_insufficient_evidence_is_inconclusive_even_with_an_alternating_fixture() -> None:
@@ -103,6 +141,43 @@ def test_versioned_json_evidence_round_trip_preserves_numbers_and_provenance() -
     assert restored == original
     assert restored.response_trace.values == original.response_trace.values
     assert restored.provenance.protocol_digest == original.provenance.protocol_digest
+
+
+def test_old_v1_payload_without_additive_validation_fields_still_round_trips() -> None:
+    payload = {
+        "schema_version": "v1",
+        "status": "inconclusive",
+        "provenance": {
+            "capability_version": "1.0.0",
+            "evidence_schema_version": "v1",
+            "protocol_digest": "legacy",
+            "source": "local_ideal_simulation",
+            "seed": 3,
+        },
+        "response_trace": {"periods": 2, "values": [1.0, -1.0]},
+        "diagnostics": {
+            "subharmonic_response": {"status": "pass", "metric": 1.0, "reason": "legacy"},
+            "evidence_limitations": {"status": "insufficient_controls", "metric": None, "reason": "legacy"},
+        },
+        "failure_modes": ["insufficient_time_window"],
+        "reproducibility": {"seed_policy": "explicit_local_seed"},
+        "evidence": None,
+    }
+
+    restored = EvidenceBundle.from_json(json.dumps(payload))
+
+    assert restored.response_trace.means == (1.0, -1.0)
+    assert restored.response_trace.uncertainties == ()
+    assert restored.diagnostics.spectral_half_frequency is None
+    assert json.loads(restored.to_json())["schema_version"] == "v1"
+
+
+def test_boundary_protocol_keeps_single_shot_uncertainty_zero_and_short_window_inconclusive() -> None:
+    result = run_floquet_ising(_protocol(periods=1, repetitions=1), seed=7)
+
+    assert result.status is ValidationStatus.INCONCLUSIVE
+    assert result.response_trace.uncertainties == (0.0,)
+    assert "insufficient_time_window" in result.failure_modes
 
 
 def test_unsupported_evidence_schema_version_is_rejected() -> None:
