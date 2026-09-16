@@ -164,7 +164,9 @@ def run_noisy_floquet_ising(
         reproducibility={
             "seed_policy": "explicit_local_seed",
             "algorithm": "python_random_mt19937",
-            "measurement_policy": "seeded_projective_with_depolarizing_readout_noise",
+            "evolution_noise": "depolarizing_pauli_channel",
+            "measurement_noise": "readout_bit_flip",
+            "measurement_policy": "seeded_projective_with_separate_evolution_and_readout_noise",
             "ideal_baseline": "separate_evidence_bundle",
         },
         noise=noise,
@@ -314,21 +316,50 @@ def _measure_trace_with_noise(
     state = _initial_state(protocol.system_size, initial_state)
     values: list[float] = []
     uncertainties: list[float] = []
-    flip_probability = 1.0 - (1.0 - noise.depolarizing_probability) * (1.0 - noise.readout_flip_probability)
     for _ in range(protocol.periods):
         _apply_interactions(state, protocol, fields)
         for qubit in range(protocol.system_size):
             _apply_rx(state, protocol.system_size, qubit, protocol.pulse_angle)
+        _apply_depolarizing_channel(state, protocol.system_size, noise.depolarizing_probability, rng)
         probabilities = _basis_probabilities(state)
         samples = []
         for _ in range(protocol.repetitions):
-            sample = _sample_magnetization(probabilities, protocol.system_size, rng)
-            samples.append(-sample if rng.random() < flip_probability else sample)
+            index = _sample_basis_index(probabilities, rng)
+            for bit in range(protocol.system_size):
+                if rng.random() < noise.readout_flip_probability:
+                    index ^= 1 << bit
+            samples.append(_magnetization_for_index(index, protocol.system_size))
         mean = sum(samples) / len(samples)
         variance = sum((sample - mean) ** 2 for sample in samples) / len(samples)
         values.append(mean)
         uncertainties.append(math.sqrt(variance / len(samples)))
     return ResponseTrace(protocol.periods, tuple(values), tuple(uncertainties), protocol.repetitions)
+
+
+def _apply_depolarizing_channel(
+    state: list[complex], size: int, probability: float, rng: random.Random
+) -> None:
+    for qubit in range(size):
+        if rng.random() >= probability:
+            continue
+        pauli = rng.randrange(3)
+        mask = 1 << qubit
+        if pauli == 0:
+            for index in range(len(state)):
+                if index & mask == 0:
+                    other = index | mask
+                    state[index], state[other] = state[other], state[index]
+        elif pauli == 1:
+            for index in range(len(state)):
+                if index & mask == 0:
+                    other = index | mask
+                    zero, one = state[index], state[other]
+                    state[index] = -1j * one
+                    state[other] = 1j * zero
+        else:
+            for index in range(len(state)):
+                if index & mask:
+                    state[index] = -state[index]
 
 
 def _basis_probabilities(state: Sequence[complex]) -> tuple[float, ...]:
@@ -342,10 +373,18 @@ def _basis_probabilities(state: Sequence[complex]) -> tuple[float, ...]:
 def _sample_magnetization(
     probabilities: Sequence[float], size: int, rng: random.Random
 ) -> float:
+    return _magnetization_for_index(_sample_basis_index(probabilities, rng), size)
+
+
+def _sample_basis_index(probabilities: Sequence[float], rng: random.Random) -> int:
     target = rng.random()
     cumulative = 0.0
     for index, probability in enumerate(probabilities):
         cumulative += probability
         if target < cumulative or index == len(probabilities) - 1:
-            return sum(1 if index & (1 << bit) == 0 else -1 for bit in range(size)) / size
+            return index
     raise RuntimeError("failed to sample ideal state probability")
+
+
+def _magnetization_for_index(index: int, size: int) -> float:
+    return sum(1 if index & (1 << bit) == 0 else -1 for bit in range(size)) / size

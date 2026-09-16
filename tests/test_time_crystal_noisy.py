@@ -40,6 +40,24 @@ def test_noisy_run_replays_with_typed_provenance_and_separate_source() -> None:
     assert first.diagnostics.lifetime is not None
 
 
+def test_depolarizing_evolution_is_distinct_from_readout_noise() -> None:
+    depolarizing_only = run_noisy_floquet_ising(
+        _protocol(pulse_angle=0.0),
+        seed=19,
+        noise=NoiseConfig(depolarizing_probability=1.0, readout_flip_probability=0.0),
+    )
+    readout_only = run_noisy_floquet_ising(
+        _protocol(pulse_angle=0.0),
+        seed=19,
+        noise=NoiseConfig(depolarizing_probability=0.0, readout_flip_probability=1.0),
+    )
+
+    assert depolarizing_only.response_trace != readout_only.response_trace
+    assert depolarizing_only.reproducibility["evolution_noise"] == "depolarizing_pauli_channel"
+    assert depolarizing_only.reproducibility["measurement_noise"] == "readout_bit_flip"
+    assert depolarizing_only.noise.digest != readout_only.noise.digest
+
+
 def test_noisy_v2_round_trip_and_v1_ideal_read_are_compatible() -> None:
     noisy = run_noisy_floquet_ising(
         _protocol(periods=8),
