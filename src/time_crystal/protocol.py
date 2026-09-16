@@ -70,24 +70,33 @@ class FloquetIsingProtocol:
 class NoiseConfig:
     depolarizing_probability: float = 0.0
     readout_flip_probability: float = 0.0
-    model_version: str = "depolarizing_readout_v1"
+    model_version: str = "depolarizing_readout_coherent_over_rotation_v2"
+    coherent_pulse_angle_offset: float = 0.0
 
     def __post_init__(self) -> None:
-        if self.model_version != "depolarizing_readout_v1":
-            raise ProtocolValidationError("model_version must be depolarizing_readout_v1")
+        if self.model_version not in {
+            "depolarizing_readout_v1",
+            "depolarizing_readout_coherent_over_rotation_v2",
+        }:
+            raise ProtocolValidationError("model_version must be a supported noise model version")
         for name, value in (
             ("depolarizing_probability", self.depolarizing_probability),
             ("readout_flip_probability", self.readout_flip_probability),
+            ("coherent_pulse_angle_offset", self.coherent_pulse_angle_offset),
         ):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ProtocolValidationError(f"{name} must be a finite number")
-            if not 0.0 <= value <= 1.0:
+            if name == "coherent_pulse_angle_offset":
+                if not -math.pi / 2 <= value <= math.pi / 2:
+                    raise ProtocolValidationError(f"{name} must be between -pi/2 and pi/2")
+            elif not 0.0 <= value <= 1.0:
                 raise ProtocolValidationError(f"{name} must be between 0 and 1")
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "depolarizing_probability": self.depolarizing_probability,
             "readout_flip_probability": self.readout_flip_probability,
+            "coherent_pulse_angle_offset": self.coherent_pulse_angle_offset,
             "model_version": self.model_version,
         }
 
