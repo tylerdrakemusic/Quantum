@@ -54,7 +54,7 @@ def run_floquet_ising(
     )
     null = _shuffled_null_diagnostic(values, seed)
     lifetime = _lifetime_diagnostic(values)
-    control_trace = _run_control_trace(protocol, fields, seed)
+    control_trace = _run_control_trace(protocol, fields, seed, initial_state)
     control = Diagnostic(
         "pass" if _alternating_amplitude(control_trace.values) < 0.5 else "fail",
         _alternating_amplitude(control_trace.values),
@@ -125,9 +125,9 @@ def run_noisy_floquet_ising(
         {"ideal_amplitude": baseline_amplitude, "noise_digest": noise.digest},
     )
     finite_size = Diagnostic(
-        "inconclusive" if protocol.system_size < 3 or protocol.periods < 8 else "pass",
+        "inconclusive",
         None,
-        "finite-size scaling control is unavailable for a single small system",
+        "finite-size scaling control requires a multi-size comparison",
         {"system_size": protocol.system_size, "minimum_system_size": 3, "periods": protocol.periods},
     )
     failures: list[str] = []
@@ -260,7 +260,7 @@ def _lifetime_diagnostic(values: Sequence[float]) -> Diagnostic:
 
 
 def _run_control_trace(
-    protocol: FloquetIsingProtocol, fields: Sequence[float], seed: int | None
+    protocol: FloquetIsingProtocol, fields: Sequence[float], seed: int | None, initial_state: str
 ) -> ResponseTrace:
     control_protocol = FloquetIsingProtocol(
         system_size=protocol.system_size,
@@ -271,7 +271,7 @@ def _run_control_trace(
         disorder_strength=protocol.disorder_strength,
         observable=protocol.observable,
     )
-    return _measure_trace(control_protocol, fields, random.Random(None if seed is None else seed + 2))
+    return _measure_trace(control_protocol, fields, random.Random(None if seed is None else seed + 2), initial_state)
 
 
 def _initial_state(size: int, initial_state: str) -> list[complex]:
@@ -287,10 +287,9 @@ def _initial_state(size: int, initial_state: str) -> list[complex]:
 
 
 def _measure_trace(
-    protocol: FloquetIsingProtocol, fields: Sequence[float], rng: random.Random
+    protocol: FloquetIsingProtocol, fields: Sequence[float], rng: random.Random, initial_state: str
 ) -> ResponseTrace:
-    state = [0j] * (1 << protocol.system_size)
-    state[0] = 1.0 + 0j
+    state = _initial_state(protocol.system_size, initial_state)
     values: list[float] = []
     uncertainties: list[float] = []
     for _ in range(protocol.periods):
