@@ -102,6 +102,11 @@ def test_coherent_over_rotation_offset_defaults_to_zero_and_validates_bounds() -
             NoiseConfig(coherent_pulse_angle_offset=value)
 
 
+def test_v1_noise_artifact_rejects_nonzero_coherent_offset() -> None:
+    with pytest.raises(ProtocolValidationError, match="v1.*coherent|coherent.*v1"):
+        NoiseConfig(model_version="depolarizing_readout_v1", coherent_pulse_angle_offset=0.12)
+
+
 def test_zero_offset_preserves_existing_noisy_trace() -> None:
     noise = NoiseConfig(depolarizing_probability=0.08, readout_flip_probability=0.03)
 

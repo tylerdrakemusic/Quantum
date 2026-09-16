@@ -91,6 +91,8 @@ class NoiseConfig:
                     raise ProtocolValidationError(f"{name} must be between -pi/2 and pi/2")
             elif not 0.0 <= value <= 1.0:
                 raise ProtocolValidationError(f"{name} must be between 0 and 1")
+        if self.model_version == "depolarizing_readout_v1" and self.coherent_pulse_angle_offset != 0.0:
+            raise ProtocolValidationError("v1 noise artifacts cannot represent a coherent pulse angle offset")
 
     def as_dict(self) -> dict[str, Any]:
         return {
