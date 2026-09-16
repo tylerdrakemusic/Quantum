@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -78,6 +78,12 @@ class Provenance:
 class ResponseTrace:
     periods: int
     values: tuple[float, ...]
+    uncertainties: tuple[float, ...] = ()
+    shots_per_period: int = 1
+
+    @property
+    def means(self) -> tuple[float, ...]:
+        return self.values
 
 
 @dataclass(frozen=True)
@@ -85,12 +91,17 @@ class Diagnostic:
     status: str
     metric: float | None
     reason: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class Diagnostics:
     subharmonic_response: Diagnostic
     evidence_limitations: Diagnostic
+    spectral_half_frequency: Diagnostic | None = None
+    shuffled_null: Diagnostic | None = None
+    lifetime: Diagnostic | None = None
+    non_period_doubled_control: Diagnostic | None = None
 
 
 @dataclass(frozen=True)
