@@ -5,10 +5,11 @@ import random
 from typing import Sequence
 
 from .evidence import EvidenceBundle
-from .protocol import Diagnostic, Diagnostics, FloquetIsingProtocol, Provenance, ResponseTrace, ValidationStatus
+from .protocol import Diagnostic, Diagnostics, FloquetIsingProtocol, NoiseConfig, Provenance, ResponseTrace, ValidationStatus
 
 
 CAPABILITY_VERSION = "1.0.0"
+NOISY_CAPABILITY_VERSION = "2.0.0"
 SHUFFLED_NULL_PERMUTATIONS = 64
 LIFETIME_THRESHOLD = 0.5
 LIFETIME_MINIMUM_WINDOW = 4
@@ -53,7 +54,7 @@ def run_floquet_ising(
     )
     null = _shuffled_null_diagnostic(values, seed)
     lifetime = _lifetime_diagnostic(values)
-    control_trace = _run_control_trace(protocol, fields, seed)
+    control_trace = _run_control_trace(protocol, fields, seed, initial_state)
     control = Diagnostic(
         "pass" if _alternating_amplitude(control_trace.values) < 0.5 else "fail",
         _alternating_amplitude(control_trace.values),
@@ -94,6 +95,81 @@ def run_floquet_ising(
             "measurement_policy": "seeded_projective_from_ideal_probabilities",
         },
         control_trace=control_trace,
+    )
+
+
+def run_noisy_floquet_ising(
+    protocol: FloquetIsingProtocol,
+    *,
+    seed: int,
+    noise: NoiseConfig,
+    initial_state: str = "all_zero",
+) -> EvidenceBundle:
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise ValueError("seed must be a non-negative integer")
+    if initial_state not in ("all_zero", "all_one", "alternating"):
+        raise ValueError("initial_state must be all_zero, all_one, or alternating")
+    rng = random.Random(seed)
+    fields = tuple(rng.uniform(-protocol.disorder_strength, protocol.disorder_strength) for _ in range(protocol.system_size))
+    trace = _measure_trace_with_noise(protocol, fields, rng, noise, initial_state)
+    amplitude = _alternating_amplitude(trace.values)
+    baseline = run_floquet_ising(protocol, seed=seed, initial_state=initial_state)
+    baseline_amplitude = _alternating_amplitude(baseline.response_trace.values)
+    response = Diagnostic("pass" if amplitude >= 0.5 else "fail", amplitude, "noisy alternating component")
+    lifetime = _lifetime_diagnostic(trace.values)
+    dominance_ratio = 0.0 if baseline_amplitude == 0.0 else amplitude / baseline_amplitude
+    noise_dominance = Diagnostic(
+        "fail" if dominance_ratio < 0.5 else "pass",
+        dominance_ratio,
+        "noisy-to-ideal alternating amplitude ratio",
+        {"ideal_amplitude": baseline_amplitude, "noise_digest": noise.digest},
+    )
+    finite_size = Diagnostic(
+        "inconclusive",
+        None,
+        "finite-size scaling control requires a multi-size comparison",
+        {"system_size": protocol.system_size, "minimum_system_size": 3, "periods": protocol.periods},
+    )
+    failures: list[str] = []
+    if response.status != "pass":
+        failures.append("subharmonic_response_failed")
+    if noise_dominance.status != "pass":
+        failures.append("noise_dominated")
+    if lifetime.status != "pass":
+        failures.append("lifetime_criterion_failed")
+    if finite_size.status != "pass":
+        failures.append("finite_size_control_incomplete")
+    status = ValidationStatus.CANDIDATE if not failures else ValidationStatus.INCONCLUSIVE
+    return EvidenceBundle(
+        status=status,
+        provenance=Provenance(
+            NOISY_CAPABILITY_VERSION,
+            "v2",
+            protocol.digest,
+            "aer_noisy_simulation",
+            seed,
+            simulator="local_aer_style",
+            noise_config_digest=noise.digest,
+        ),
+        response_trace=trace,
+        diagnostics=Diagnostics(
+            response,
+            Diagnostic("inconclusive", None, "noisy robustness controls are limited to depolarizing/readout noise"),
+            baseline_response=Diagnostic("pass", baseline_amplitude, "ideal baseline retained separately"),
+            noise_dominance=noise_dominance,
+            lifetime=lifetime,
+            finite_size_false_positive=finite_size,
+        ),
+        failure_modes=tuple(failures),
+        reproducibility={
+            "seed_policy": "explicit_local_seed",
+            "algorithm": "python_random_mt19937",
+            "evolution_noise": "depolarizing_pauli_channel",
+            "measurement_noise": "readout_bit_flip",
+            "measurement_policy": "seeded_projective_with_separate_evolution_and_readout_noise",
+            "ideal_baseline": "separate_evidence_bundle",
+        },
+        noise=noise,
     )
 
 
@@ -184,7 +260,7 @@ def _lifetime_diagnostic(values: Sequence[float]) -> Diagnostic:
 
 
 def _run_control_trace(
-    protocol: FloquetIsingProtocol, fields: Sequence[float], seed: int | None
+    protocol: FloquetIsingProtocol, fields: Sequence[float], seed: int | None, initial_state: str
 ) -> ResponseTrace:
     control_protocol = FloquetIsingProtocol(
         system_size=protocol.system_size,
@@ -195,7 +271,7 @@ def _run_control_trace(
         disorder_strength=protocol.disorder_strength,
         observable=protocol.observable,
     )
-    return _measure_trace(control_protocol, fields, random.Random(None if seed is None else seed + 2))
+    return _measure_trace(control_protocol, fields, random.Random(None if seed is None else seed + 2), initial_state)
 
 
 def _initial_state(size: int, initial_state: str) -> list[complex]:
@@ -211,10 +287,9 @@ def _initial_state(size: int, initial_state: str) -> list[complex]:
 
 
 def _measure_trace(
-    protocol: FloquetIsingProtocol, fields: Sequence[float], rng: random.Random
+    protocol: FloquetIsingProtocol, fields: Sequence[float], rng: random.Random, initial_state: str
 ) -> ResponseTrace:
-    state = [0j] * (1 << protocol.system_size)
-    state[0] = 1.0 + 0j
+    state = _initial_state(protocol.system_size, initial_state)
     values: list[float] = []
     uncertainties: list[float] = []
     for _ in range(protocol.periods):
@@ -230,6 +305,62 @@ def _measure_trace(
     return ResponseTrace(protocol.periods, tuple(values), tuple(uncertainties), protocol.repetitions)
 
 
+def _measure_trace_with_noise(
+    protocol: FloquetIsingProtocol,
+    fields: Sequence[float],
+    rng: random.Random,
+    noise: NoiseConfig,
+    initial_state: str,
+) -> ResponseTrace:
+    state = _initial_state(protocol.system_size, initial_state)
+    values: list[float] = []
+    uncertainties: list[float] = []
+    for _ in range(protocol.periods):
+        _apply_interactions(state, protocol, fields)
+        for qubit in range(protocol.system_size):
+            _apply_rx(state, protocol.system_size, qubit, protocol.pulse_angle)
+        _apply_depolarizing_channel(state, protocol.system_size, noise.depolarizing_probability, rng)
+        probabilities = _basis_probabilities(state)
+        samples = []
+        for _ in range(protocol.repetitions):
+            index = _sample_basis_index(probabilities, rng)
+            for bit in range(protocol.system_size):
+                if rng.random() < noise.readout_flip_probability:
+                    index ^= 1 << bit
+            samples.append(_magnetization_for_index(index, protocol.system_size))
+        mean = sum(samples) / len(samples)
+        variance = sum((sample - mean) ** 2 for sample in samples) / len(samples)
+        values.append(mean)
+        uncertainties.append(math.sqrt(variance / len(samples)))
+    return ResponseTrace(protocol.periods, tuple(values), tuple(uncertainties), protocol.repetitions)
+
+
+def _apply_depolarizing_channel(
+    state: list[complex], size: int, probability: float, rng: random.Random
+) -> None:
+    for qubit in range(size):
+        if rng.random() >= probability:
+            continue
+        pauli = rng.randrange(3)
+        mask = 1 << qubit
+        if pauli == 0:
+            for index in range(len(state)):
+                if index & mask == 0:
+                    other = index | mask
+                    state[index], state[other] = state[other], state[index]
+        elif pauli == 1:
+            for index in range(len(state)):
+                if index & mask == 0:
+                    other = index | mask
+                    zero, one = state[index], state[other]
+                    state[index] = -1j * one
+                    state[other] = 1j * zero
+        else:
+            for index in range(len(state)):
+                if index & mask:
+                    state[index] = -state[index]
+
+
 def _basis_probabilities(state: Sequence[complex]) -> tuple[float, ...]:
     probabilities = tuple(abs(amplitude) ** 2 for amplitude in state)
     total = sum(probabilities)
@@ -241,10 +372,18 @@ def _basis_probabilities(state: Sequence[complex]) -> tuple[float, ...]:
 def _sample_magnetization(
     probabilities: Sequence[float], size: int, rng: random.Random
 ) -> float:
+    return _magnetization_for_index(_sample_basis_index(probabilities, rng), size)
+
+
+def _sample_basis_index(probabilities: Sequence[float], rng: random.Random) -> int:
     target = rng.random()
     cumulative = 0.0
     for index, probability in enumerate(probabilities):
         cumulative += probability
         if target < cumulative or index == len(probabilities) - 1:
-            return sum(1 if index & (1 << bit) == 0 else -1 for bit in range(size)) / size
+            return index
     raise RuntimeError("failed to sample ideal state probability")
+
+
+def _magnetization_for_index(index: int, size: int) -> float:
+    return sum(1 if index & (1 << bit) == 0 else -1 for bit in range(size)) / size
