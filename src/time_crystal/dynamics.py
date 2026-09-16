@@ -9,7 +9,7 @@ from .protocol import Diagnostic, Diagnostics, FloquetIsingProtocol, NoiseConfig
 
 
 CAPABILITY_VERSION = "1.0.0"
-NOISY_CAPABILITY_VERSION = "2.0.0"
+NOISY_CAPABILITY_VERSION = "3.0.0"
 SHUFFLED_NULL_PERMUTATIONS = 64
 LIFETIME_THRESHOLD = 0.5
 LIFETIME_MINIMUM_WINDOW = 4
@@ -154,7 +154,11 @@ def run_noisy_floquet_ising(
         response_trace=trace,
         diagnostics=Diagnostics(
             response,
-            Diagnostic("inconclusive", None, "noisy robustness controls are limited to depolarizing/readout noise"),
+            Diagnostic(
+                "inconclusive",
+                None,
+                "noisy robustness controls are limited to coherent over-rotation, depolarizing, and readout noise",
+            ),
             baseline_response=Diagnostic("pass", baseline_amplitude, "ideal baseline retained separately"),
             noise_dominance=noise_dominance,
             lifetime=lifetime,
@@ -164,7 +168,13 @@ def run_noisy_floquet_ising(
         reproducibility={
             "seed_policy": "explicit_local_seed",
             "algorithm": "python_random_mt19937",
-            "evolution_noise": "depolarizing_pauli_channel",
+            "coherent_noise": "constant_pulse_angle_offset",
+            "coherent_pulse_angle_offset_radians": noise.coherent_pulse_angle_offset,
+            "evolution_noise": (
+                "coherent_pulse_angle_offset_then_depolarizing_pauli_channel"
+                if noise.coherent_pulse_angle_offset != 0.0
+                else "depolarizing_pauli_channel"
+            ),
             "measurement_noise": "readout_bit_flip",
             "measurement_policy": "seeded_projective_with_separate_evolution_and_readout_noise",
             "ideal_baseline": "separate_evidence_bundle",
@@ -318,7 +328,12 @@ def _measure_trace_with_noise(
     for _ in range(protocol.periods):
         _apply_interactions(state, protocol, fields)
         for qubit in range(protocol.system_size):
-            _apply_rx(state, protocol.system_size, qubit, protocol.pulse_angle)
+            _apply_rx(
+                state,
+                protocol.system_size,
+                qubit,
+                protocol.pulse_angle + noise.coherent_pulse_angle_offset,
+            )
         _apply_depolarizing_channel(state, protocol.system_size, noise.depolarizing_probability, rng)
         probabilities = _basis_probabilities(state)
         samples = []
