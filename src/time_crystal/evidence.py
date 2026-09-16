@@ -28,6 +28,8 @@ class EvidenceBundle:
     reproducibility: dict[str, Any]
     evidence: EvidenceUnavailable | None = None
     control_trace: ResponseTrace | None = None
+    robustness: dict[str, Any] | None = None
+    controls: dict[str, Any] | None = None
 
     @classmethod
     def unavailable(cls, *, reason: str, source: str) -> EvidenceBundle:
@@ -91,6 +93,8 @@ class EvidenceBundle:
             "evidence": None
             if self.evidence is None
             else {"reason": self.evidence.reason, "source": self.evidence.source},
+            "robustness": self.robustness,
+            "controls": self.controls,
         }
         return payload
 
@@ -141,6 +145,8 @@ class EvidenceBundle:
             failure_modes=tuple(payload["failure_modes"]),
             reproducibility=dict(payload["reproducibility"]),
             evidence=evidence,
+            robustness=payload.get("robustness"),
+            controls=payload.get("controls"),
         )
 
     @staticmethod
