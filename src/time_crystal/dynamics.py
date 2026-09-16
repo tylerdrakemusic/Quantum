@@ -14,13 +14,19 @@ LIFETIME_THRESHOLD = 0.5
 LIFETIME_MINIMUM_WINDOW = 4
 
 
-def run_floquet_ising(protocol: FloquetIsingProtocol, *, seed: int | None) -> EvidenceBundle:
+def run_floquet_ising(
+    protocol: FloquetIsingProtocol,
+    *,
+    seed: int | None,
+    initial_state: str = "all_zero",
+) -> EvidenceBundle:
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or seed < 0):
         raise ValueError("seed must be a non-negative integer or None")
+    if initial_state not in ("all_zero", "all_one", "alternating"):
+        raise ValueError("initial_state must be all_zero, all_one, or alternating")
     rng = random.Random(seed)
     fields = tuple(rng.uniform(-protocol.disorder_strength, protocol.disorder_strength) for _ in range(protocol.system_size))
-    state = [0j] * (1 << protocol.system_size)
-    state[0] = 1.0 + 0j
+    state = _initial_state(protocol.system_size, initial_state)
     values: list[float] = []
     uncertainties: list[float] = []
     for _ in range(protocol.periods):
@@ -190,6 +196,18 @@ def _run_control_trace(
         observable=protocol.observable,
     )
     return _measure_trace(control_protocol, fields, random.Random(None if seed is None else seed + 2))
+
+
+def _initial_state(size: int, initial_state: str) -> list[complex]:
+    state = [0j] * (1 << size)
+    if initial_state == "all_zero":
+        index = 0
+    elif initial_state == "all_one":
+        index = (1 << size) - 1
+    else:
+        index = sum(1 << bit for bit in range(size) if bit % 2 == 1)
+    state[index] = 1.0 + 0j
+    return state
 
 
 def _measure_trace(

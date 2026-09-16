@@ -6,6 +6,13 @@ from .protocol import (
     ProtocolValidationError,
     ValidationStatus,
 )
+from .robustness import (
+    ControlEvidence,
+    RobustnessSweep,
+    aggregate_evidence,
+    run_mechanism_controls,
+    run_robustness_sweep,
+)
 
 __all__ = [
     "EvidenceBundle",
@@ -15,4 +22,9 @@ __all__ = [
     "UnsupportedSchemaVersion",
     "ValidationStatus",
     "run_floquet_ising",
+    "ControlEvidence",
+    "RobustnessSweep",
+    "aggregate_evidence",
+    "run_mechanism_controls",
+    "run_robustness_sweep",
 ]

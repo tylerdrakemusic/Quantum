@@ -65,6 +65,9 @@ class FloquetIsingProtocol:
         return hashlib.sha256(encoded).hexdigest()
 
 
+VALID_INITIAL_STATES = ("all_zero", "all_one", "alternating")
+
+
 @dataclass(frozen=True)
 class Provenance:
     capability_version: str
