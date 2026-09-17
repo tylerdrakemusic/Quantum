@@ -5,11 +5,20 @@ import random
 from typing import Sequence
 
 from .evidence import EvidenceBundle
-from .protocol import Diagnostic, Diagnostics, FloquetIsingProtocol, NoiseConfig, Provenance, ResponseTrace, ValidationStatus
+from .protocol import (
+    Diagnostic,
+    Diagnostics,
+    EvidenceUnavailable,
+    FloquetIsingProtocol,
+    NoiseConfig,
+    Provenance,
+    ResponseTrace,
+    ValidationStatus,
+)
 
 
 CAPABILITY_VERSION = "1.0.0"
-NOISY_CAPABILITY_VERSION = "3.0.0"
+NOISY_CAPABILITY_VERSION = "3.1.0"
 SHUFFLED_NULL_PERMUTATIONS = 64
 LIFETIME_THRESHOLD = 0.5
 LIFETIME_MINIMUM_WINDOW = 4
@@ -109,6 +118,34 @@ def run_noisy_floquet_ising(
         raise ValueError("seed must be a non-negative integer")
     if initial_state not in ("all_zero", "all_one", "alternating"):
         raise ValueError("initial_state must be all_zero, all_one, or alternating")
+    if noise.leakage_probability != 0.0:
+        return EvidenceBundle(
+            status=ValidationStatus.UNAVAILABLE,
+            provenance=Provenance(
+                NOISY_CAPABILITY_VERSION,
+                "v2",
+                protocol.digest,
+                "aer_noisy_simulation",
+                seed,
+                simulator="local_aer_style",
+                noise_config_digest=noise.digest,
+            ),
+            response_trace=None,
+            diagnostics=None,
+            failure_modes=("leakage_unsupported",),
+            reproducibility={
+                "seed_policy": "explicit_local_seed",
+                "algorithm": "python_random_mt19937",
+                "requested_observable": protocol.observable,
+                "leakage_observable": "unavailable_without_out_of_subspace_state",
+                "leakage_probability_per_site_per_period": noise.leakage_probability,
+            },
+            evidence=EvidenceUnavailable(
+                "local simulator has no explicit out-of-subspace state representation for leakage",
+                "aer_noisy_simulation",
+            ),
+            noise=noise,
+        )
     rng = random.Random(seed)
     fields = tuple(rng.uniform(-protocol.disorder_strength, protocol.disorder_strength) for _ in range(protocol.system_size))
     trace = _measure_trace_with_noise(protocol, fields, rng, noise, initial_state)
