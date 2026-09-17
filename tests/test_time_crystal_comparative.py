@@ -112,6 +112,44 @@ def test_comparative_matrix_types_boundary_and_size_failures() -> None:
     assert boundary_result.cases[0].evidence.response_trace is None
 
 
+def test_unavailable_cases_preserve_requested_identity_and_provenance() -> None:
+    noise = NoiseConfig(depolarizing_probability=0.05)
+    request = ComparativeRequest(
+        protocol=_protocol(),
+        noise_models=(noise,),
+        perturbations=(Perturbation("pulse_order_disruption"),),
+        system_sizes=(1, 11),
+        seed=23,
+        max_cases=2,
+    )
+
+    result = run_comparative_matrix(request)
+
+    invalid_by_size = {case.diagnostics["system_size"]: case for case in result.cases}
+    assert set(invalid_by_size) == {1, 11}
+    assert all(case.protocol is None for case in invalid_by_size.values())
+    assert all(case.evidence.response_trace is None for case in invalid_by_size.values())
+    assert all(case.evidence.provenance.protocol_digest for case in invalid_by_size.values())
+    assert all(case.evidence.provenance.noise_config_digest == noise.digest for case in invalid_by_size.values())
+    assert invalid_by_size[1].evidence.provenance.protocol_digest != invalid_by_size[11].evidence.provenance.protocol_digest
+
+    boundary_case = run_comparative_matrix(
+        ComparativeRequest(
+            protocol=_protocol(),
+            noise_models=(noise,),
+            perturbations=(Perturbation("pulse_order_disruption"),),
+            system_sizes=(3,),
+            seed=23,
+            max_cases=1,
+        )
+    ).cases[0]
+    assert boundary_case.protocol is not None
+    assert boundary_case.protocol.system_size == 3
+    assert boundary_case.evidence.response_trace is None
+    assert boundary_case.evidence.provenance.protocol_digest == boundary_case.protocol.digest
+    assert boundary_case.evidence.provenance.noise_config_digest == noise.digest
+
+
 def test_comparative_matrix_rejects_a_non_subharmonic_result() -> None:
     result = run_comparative_matrix(
         ComparativeRequest(

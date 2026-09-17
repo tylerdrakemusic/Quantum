@@ -8,7 +8,7 @@ from typing import Any
 
 from .dynamics import run_floquet_ising, run_noisy_floquet_ising
 from .evidence import EvidenceBundle
-from .protocol import FloquetIsingProtocol, NoiseConfig, ValidationStatus
+from .protocol import FloquetIsingProtocol, NoiseConfig, Provenance, ValidationStatus
 
 
 class ComparativeClassification(str, Enum):
@@ -123,17 +123,10 @@ def _run_case(
             perturbation,
             ComparativeClassification.INVALID,
             "system size is outside the feasible bounded ladder 2 through 10",
+            protocol_digest=_protocol_digest_for_size(request.protocol, system_size),
+            system_size=system_size,
+            seed=request.seed,
         )
-    if perturbation.kind == "pulse_order_disruption" and not request.stable_pulse_boundaries:
-        return _unavailable_case(
-            None,
-            noise,
-            perturbation,
-            ComparativeClassification.UNSUPPORTED,
-            "pulse-order disruption requires stable pulse boundaries",
-        )
-    if perturbation.kind not in {"none", "pulse_order_disruption", "pulse_angle_detuning"}:
-        return _unavailable_case(None, noise, perturbation, ComparativeClassification.UNSUPPORTED, "perturbation is unavailable")
     protocol = FloquetIsingProtocol(
         system_size=system_size,
         periods=request.protocol.periods,
@@ -143,6 +136,28 @@ def _run_case(
         disorder_strength=request.protocol.disorder_strength,
         observable=request.protocol.observable,
     )
+    if perturbation.kind == "pulse_order_disruption" and not request.stable_pulse_boundaries:
+        return _unavailable_case(
+            protocol,
+            noise,
+            perturbation,
+            ComparativeClassification.UNSUPPORTED,
+            "pulse-order disruption requires stable pulse boundaries",
+            protocol_digest=protocol.digest,
+            system_size=system_size,
+            seed=request.seed,
+        )
+    if perturbation.kind not in {"none", "pulse_order_disruption", "pulse_angle_detuning"}:
+        return _unavailable_case(
+            protocol,
+            noise,
+            perturbation,
+            ComparativeClassification.UNSUPPORTED,
+            "perturbation is unavailable",
+            protocol_digest=protocol.digest,
+            system_size=system_size,
+            seed=request.seed,
+        )
     if noise == NoiseConfig():
         evidence = run_floquet_ising(
             protocol,
@@ -201,6 +216,46 @@ def _unavailable_case(
     perturbation: Perturbation,
     classification: ComparativeClassification,
     reason: str,
+    *,
+    protocol_digest: str,
+    system_size: int,
+    seed: int,
 ) -> ComparativeCase:
-    evidence = EvidenceBundle.unavailable(reason=reason, source="in_memory_comparative_matrix")
-    return ComparativeCase(protocol, noise, perturbation, classification, evidence, {"reason": reason})
+    unavailable = EvidenceBundle.unavailable(reason=reason, source="in_memory_comparative_matrix")
+    evidence = replace(
+        unavailable,
+        provenance=Provenance(
+            unavailable.provenance.capability_version,
+            unavailable.provenance.evidence_schema_version,
+            protocol_digest,
+            unavailable.provenance.source,
+            seed,
+            unavailable.provenance.simulator,
+            noise.digest,
+        ),
+        reproducibility={
+            "seed_policy": "explicit_case_seed",
+            "comparative_perturbation": perturbation.kind,
+            "comparative_perturbation_value": perturbation.value,
+            "system_size": system_size,
+        },
+    )
+    return ComparativeCase(
+        protocol,
+        noise,
+        perturbation,
+        classification,
+        evidence,
+        {
+            "reason": reason,
+            "system_size": system_size,
+            "protocol_digest": protocol_digest,
+            "noise_digest": noise.digest,
+        },
+    )
+
+
+def _protocol_digest_for_size(protocol: FloquetIsingProtocol, system_size: int) -> str:
+    payload = protocol.as_dict()
+    payload["system_size"] = system_size
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
