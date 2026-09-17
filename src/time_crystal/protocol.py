@@ -70,19 +70,22 @@ class FloquetIsingProtocol:
 class NoiseConfig:
     depolarizing_probability: float = 0.0
     readout_flip_probability: float = 0.0
-    model_version: str = "depolarizing_readout_coherent_over_rotation_v2"
+    model_version: str = "depolarizing_readout_coherent_over_rotation_leakage_v3"
     coherent_pulse_angle_offset: float = 0.0
+    leakage_probability: float = 0.0
 
     def __post_init__(self) -> None:
         if self.model_version not in {
             "depolarizing_readout_v1",
             "depolarizing_readout_coherent_over_rotation_v2",
+            "depolarizing_readout_coherent_over_rotation_leakage_v3",
         }:
             raise ProtocolValidationError("model_version must be a supported noise model version")
         for name, value in (
             ("depolarizing_probability", self.depolarizing_probability),
             ("readout_flip_probability", self.readout_flip_probability),
             ("coherent_pulse_angle_offset", self.coherent_pulse_angle_offset),
+            ("leakage_probability", self.leakage_probability),
         ):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ProtocolValidationError(f"{name} must be a finite number")
@@ -91,14 +94,19 @@ class NoiseConfig:
                     raise ProtocolValidationError(f"{name} must be between -pi/2 and pi/2")
             elif not 0.0 <= value <= 1.0:
                 raise ProtocolValidationError(f"{name} must be between 0 and 1")
-        if self.model_version == "depolarizing_readout_v1" and self.coherent_pulse_angle_offset != 0.0:
-            raise ProtocolValidationError("v1 noise artifacts cannot represent a coherent pulse angle offset")
+        if self.model_version == "depolarizing_readout_v1" and (
+            self.coherent_pulse_angle_offset != 0.0 or self.leakage_probability != 0.0
+        ):
+            raise ProtocolValidationError("v1 noise artifacts cannot represent coherent offsets or leakage")
+        if self.model_version == "depolarizing_readout_coherent_over_rotation_v2" and self.leakage_probability != 0.0:
+            raise ProtocolValidationError("v2 noise artifacts cannot represent leakage")
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "depolarizing_probability": self.depolarizing_probability,
             "readout_flip_probability": self.readout_flip_probability,
             "coherent_pulse_angle_offset": self.coherent_pulse_angle_offset,
+            "leakage_probability": self.leakage_probability,
             "model_version": self.model_version,
         }
 

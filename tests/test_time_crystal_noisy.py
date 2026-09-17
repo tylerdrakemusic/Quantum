@@ -154,3 +154,52 @@ def test_coherent_noise_is_attributed_in_provenance_and_digest_inputs() -> None:
     result = run_noisy_floquet_ising(_protocol(), seed=41, noise=offset)
     assert result.provenance.noise_config_digest == offset.digest
     assert result.diagnostics.noise_dominance.metadata["noise_digest"] == offset.digest
+
+
+def test_leakage_probability_is_bounded_and_versioned() -> None:
+    leakage = NoiseConfig(leakage_probability=0.25)
+
+    assert leakage.leakage_probability == 0.25
+    assert leakage.model_version == "depolarizing_readout_coherent_over_rotation_leakage_v3"
+    assert leakage.as_dict()["leakage_probability"] == 0.25
+    assert leakage.digest != NoiseConfig().digest
+
+    for value in (float("nan"), float("inf"), -0.01, 1.01):
+        with pytest.raises(ProtocolValidationError, match="leakage_probability"):
+            NoiseConfig(leakage_probability=value)
+
+
+def test_nonzero_leakage_returns_typed_unsupported_result_with_provenance() -> None:
+    noise = NoiseConfig(leakage_probability=0.25)
+
+    result = run_noisy_floquet_ising(_protocol(), seed=41, noise=noise)
+
+    assert result.status is ValidationStatus.UNAVAILABLE
+    assert result.response_trace is None
+    assert result.evidence is not None
+    assert "out-of-subspace" in result.evidence.reason
+    assert result.noise == noise
+    assert result.provenance.noise_config_digest == noise.digest
+    assert result.reproducibility["leakage_observable"] == "unavailable_without_out_of_subspace_state"
+    assert result.reproducibility["leakage_probability_per_site_per_period"] == 0.25
+    assert result.failure_modes == ("leakage_unsupported",)
+
+
+def test_unsupported_leakage_result_replays_deterministically() -> None:
+    noise = NoiseConfig(leakage_probability=0.25)
+
+    first = run_noisy_floquet_ising(_protocol(), seed=41, noise=noise)
+    second = run_noisy_floquet_ising(_protocol(), seed=41, noise=noise)
+
+    assert first == second
+
+
+def test_unsupported_leakage_result_round_trips_with_reason_and_digest() -> None:
+    noise = NoiseConfig(leakage_probability=0.25)
+    result = run_noisy_floquet_ising(_protocol(), seed=41, noise=noise)
+
+    restored = EvidenceBundle.from_json(result.to_json())
+
+    assert restored == result
+    assert restored.evidence.reason == result.evidence.reason
+    assert restored.noise.digest == noise.digest
