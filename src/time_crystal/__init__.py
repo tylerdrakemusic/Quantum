@@ -15,6 +15,7 @@ from .robustness import (
     run_robustness_sweep,
 )
 from .comparative import ComparativeCase, ComparativeClassification, ComparativeMatrix, ComparativeRequest, Perturbation, run_comparative_matrix
+from .evidence_report import EvidenceReport, ReplayResult, ReplayValidationError, build_evidence_report, replay_evidence_report
 
 __all__ = [
     "EvidenceBundle",
@@ -37,4 +38,9 @@ __all__ = [
     "ComparativeRequest",
     "Perturbation",
     "run_comparative_matrix",
+    "EvidenceReport",
+    "ReplayResult",
+    "ReplayValidationError",
+    "build_evidence_report",
+    "replay_evidence_report",
 ]
