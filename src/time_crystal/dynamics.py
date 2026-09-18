@@ -29,6 +29,7 @@ def run_floquet_ising(
     *,
     seed: int | None,
     initial_state: str = "all_zero",
+    pulse_order_disrupted: bool = False,
 ) -> EvidenceBundle:
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or seed < 0):
         raise ValueError("seed must be a non-negative integer or None")
@@ -40,9 +41,7 @@ def run_floquet_ising(
     values: list[float] = []
     uncertainties: list[float] = []
     for _ in range(protocol.periods):
-        _apply_interactions(state, protocol, fields)
-        for qubit in range(protocol.system_size):
-            _apply_rx(state, protocol.system_size, qubit, protocol.pulse_angle)
+        _apply_period(state, protocol, fields, pulse_order_disrupted)
         probabilities = _basis_probabilities(state)
         samples = [
             _sample_magnetization(probabilities, protocol.system_size, rng)
@@ -63,7 +62,7 @@ def run_floquet_ising(
     )
     null = _shuffled_null_diagnostic(values, seed)
     lifetime = _lifetime_diagnostic(values)
-    control_trace = _run_control_trace(protocol, fields, seed, initial_state)
+    control_trace = _run_control_trace(protocol, fields, seed, initial_state, pulse_order_disrupted)
     control = Diagnostic(
         "pass" if _alternating_amplitude(control_trace.values) < 0.5 else "fail",
         _alternating_amplitude(control_trace.values),
@@ -113,6 +112,7 @@ def run_noisy_floquet_ising(
     seed: int,
     noise: NoiseConfig,
     initial_state: str = "all_zero",
+    pulse_order_disrupted: bool = False,
 ) -> EvidenceBundle:
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise ValueError("seed must be a non-negative integer")
@@ -148,7 +148,7 @@ def run_noisy_floquet_ising(
         )
     rng = random.Random(seed)
     fields = tuple(rng.uniform(-protocol.disorder_strength, protocol.disorder_strength) for _ in range(protocol.system_size))
-    trace = _measure_trace_with_noise(protocol, fields, rng, noise, initial_state)
+    trace = _measure_trace_with_noise(protocol, fields, rng, noise, initial_state, pulse_order_disrupted)
     amplitude = _alternating_amplitude(trace.values)
     baseline = run_floquet_ising(protocol, seed=seed, initial_state=initial_state)
     baseline_amplitude = _alternating_amplitude(baseline.response_trace.values)
@@ -234,6 +234,19 @@ def _apply_interactions(state: list[complex], protocol: FloquetIsingProtocol, fi
         state[index] = amplitude * complex(math.cos(phase), -math.sin(phase))
 
 
+def _apply_period(
+    state: list[complex], protocol: FloquetIsingProtocol, fields: Sequence[float], pulse_order_disrupted: bool
+) -> None:
+    if pulse_order_disrupted:
+        for qubit in range(protocol.system_size):
+            _apply_rx(state, protocol.system_size, qubit, protocol.pulse_angle)
+        _apply_interactions(state, protocol, fields)
+        return
+    _apply_interactions(state, protocol, fields)
+    for qubit in range(protocol.system_size):
+        _apply_rx(state, protocol.system_size, qubit, protocol.pulse_angle)
+
+
 def _apply_rx(state: list[complex], size: int, qubit: int, angle: float) -> None:
     cosine = math.cos(angle / 2)
     sine = -1j * math.sin(angle / 2)
@@ -307,7 +320,11 @@ def _lifetime_diagnostic(values: Sequence[float]) -> Diagnostic:
 
 
 def _run_control_trace(
-    protocol: FloquetIsingProtocol, fields: Sequence[float], seed: int | None, initial_state: str
+    protocol: FloquetIsingProtocol,
+    fields: Sequence[float],
+    seed: int | None,
+    initial_state: str,
+    pulse_order_disrupted: bool = False,
 ) -> ResponseTrace:
     control_protocol = FloquetIsingProtocol(
         system_size=protocol.system_size,
@@ -318,7 +335,13 @@ def _run_control_trace(
         disorder_strength=protocol.disorder_strength,
         observable=protocol.observable,
     )
-    return _measure_trace(control_protocol, fields, random.Random(None if seed is None else seed + 2), initial_state)
+    return _measure_trace(
+        control_protocol,
+        fields,
+        random.Random(None if seed is None else seed + 2),
+        initial_state,
+        pulse_order_disrupted,
+    )
 
 
 def _initial_state(size: int, initial_state: str) -> list[complex]:
@@ -334,15 +357,17 @@ def _initial_state(size: int, initial_state: str) -> list[complex]:
 
 
 def _measure_trace(
-    protocol: FloquetIsingProtocol, fields: Sequence[float], rng: random.Random, initial_state: str
+    protocol: FloquetIsingProtocol,
+    fields: Sequence[float],
+    rng: random.Random,
+    initial_state: str,
+    pulse_order_disrupted: bool = False,
 ) -> ResponseTrace:
     state = _initial_state(protocol.system_size, initial_state)
     values: list[float] = []
     uncertainties: list[float] = []
     for _ in range(protocol.periods):
-        _apply_interactions(state, protocol, fields)
-        for qubit in range(protocol.system_size):
-            _apply_rx(state, protocol.system_size, qubit, protocol.pulse_angle)
+        _apply_period(state, protocol, fields, pulse_order_disrupted)
         probabilities = _basis_probabilities(state)
         samples = [_sample_magnetization(probabilities, protocol.system_size, rng) for _ in range(protocol.repetitions)]
         mean = sum(samples) / len(samples)
@@ -358,19 +383,30 @@ def _measure_trace_with_noise(
     rng: random.Random,
     noise: NoiseConfig,
     initial_state: str,
+    pulse_order_disrupted: bool = False,
 ) -> ResponseTrace:
     state = _initial_state(protocol.system_size, initial_state)
     values: list[float] = []
     uncertainties: list[float] = []
     for _ in range(protocol.periods):
-        _apply_interactions(state, protocol, fields)
-        for qubit in range(protocol.system_size):
-            _apply_rx(
-                state,
-                protocol.system_size,
-                qubit,
-                protocol.pulse_angle + noise.coherent_pulse_angle_offset,
-            )
+        if pulse_order_disrupted:
+            for qubit in range(protocol.system_size):
+                _apply_rx(
+                    state,
+                    protocol.system_size,
+                    qubit,
+                    protocol.pulse_angle + noise.coherent_pulse_angle_offset,
+                )
+            _apply_interactions(state, protocol, fields)
+        else:
+            _apply_interactions(state, protocol, fields)
+            for qubit in range(protocol.system_size):
+                _apply_rx(
+                    state,
+                    protocol.system_size,
+                    qubit,
+                    protocol.pulse_angle + noise.coherent_pulse_angle_offset,
+                )
         _apply_depolarizing_channel(state, protocol.system_size, noise.depolarizing_probability, rng)
         probabilities = _basis_probabilities(state)
         samples = []

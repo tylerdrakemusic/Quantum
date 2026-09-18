@@ -14,6 +14,7 @@ from .robustness import (
     run_mechanism_controls,
     run_robustness_sweep,
 )
+from .comparative import ComparativeCase, ComparativeClassification, ComparativeMatrix, ComparativeRequest, Perturbation, run_comparative_matrix
 
 __all__ = [
     "EvidenceBundle",
@@ -30,4 +31,10 @@ __all__ = [
     "aggregate_evidence",
     "run_mechanism_controls",
     "run_robustness_sweep",
+    "ComparativeCase",
+    "ComparativeClassification",
+    "ComparativeMatrix",
+    "ComparativeRequest",
+    "Perturbation",
+    "run_comparative_matrix",
 ]
