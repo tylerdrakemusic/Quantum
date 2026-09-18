@@ -40,8 +40,8 @@ class EvidenceReport:
             raise ValueError(f"unsupported schema_version: {self.schema_version}")
         if not 1 <= self.max_cases <= MAX_REPORT_CASES:
             raise ValueError("max_cases exceeds the report payload limit")
-        if len(self.cases) > self.max_cases or self.declared_case_count < len(self.cases):
-            raise ValueError("report case counts are inconsistent")
+        if not self.cases or len(self.cases) > self.max_cases or self.declared_case_count < len(self.cases):
+            raise ValueError("report cases must be non-empty and counts consistent")
         if self.case_digests and len(self.case_digests) != len(self.cases):
             raise ValueError("report case digests are inconsistent")
 
@@ -68,6 +68,8 @@ class EvidenceReport:
     def from_json(cls, value: str) -> EvidenceReport:
         if not isinstance(value, str):
             raise ValueError("evidence report JSON must be a string")
+        if len(value.encode("utf-8")) > MAX_REPORT_BYTES:
+            raise ValueError("evidence report exceeds the payload size limit")
         try:
             payload = json.loads(value, parse_constant=_reject_json_constant)
         except (TypeError, json.JSONDecodeError, ValueError) as exc:

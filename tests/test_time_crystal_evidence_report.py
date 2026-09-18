@@ -16,6 +16,7 @@ from time_crystal import (
     run_comparative_matrix,
 )
 from time_crystal.protocol import FloquetIsingProtocol
+from time_crystal.evidence_report import MAX_REPORT_BYTES
 
 
 def _protocol(**overrides: object) -> FloquetIsingProtocol:
@@ -131,3 +132,20 @@ def test_report_rejects_malformed_and_future_version_payloads_fail_closed() -> N
     payload["schema_version"] = "v999"
     with pytest.raises(ValueError, match="v999"):
         EvidenceReport.from_dict(payload)
+
+
+def test_report_rejects_oversized_json_before_parsing() -> None:
+    oversized_malformed_json = "{" + ("x" * MAX_REPORT_BYTES)
+
+    with pytest.raises(ValueError, match="payload size limit"):
+        EvidenceReport.from_json(oversized_malformed_json)
+
+
+def test_report_rejects_empty_case_sets_during_deserialization() -> None:
+    request = _request()
+    payload = json.loads(build_evidence_report(request, run_comparative_matrix(request)).to_json())
+    payload["cases"] = []
+    payload["declared_case_count"] = 0
+
+    with pytest.raises(ValueError, match="non-empty"):
+        EvidenceReport.from_json(json.dumps(payload))
