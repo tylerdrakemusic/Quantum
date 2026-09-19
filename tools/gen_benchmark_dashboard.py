@@ -26,8 +26,10 @@ Usage
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
+import math
 import os
 import re
 import sys
@@ -43,6 +45,16 @@ sys.path.insert(0, str(_ROOT / "src" / "utils"))
 sys.path.insert(0, str(_ROOT / "src"))
 import cache_integrity
 from quantum_toolkit.benchmark_provenance import normalize_result
+from time_crystal import (
+    ComparativeRequest,
+    EvidenceReport,
+    FloquetIsingProtocol,
+    NoiseConfig,
+    Perturbation,
+    build_evidence_report,
+    replay_evidence_report,
+    run_comparative_matrix,
+)
 
 # ---------------------------------------------------------------------------
 # Orion portrait lazy-loader
@@ -1070,6 +1082,14 @@ tr.sim td { border-left: 2px solid var(--sim-accent); }
 .notes { color: var(--muted); font-size: 0.8rem; max-width: 300px; }
 .hw-table, .monthly-table, .bench-table { margin-bottom: 2rem; }
 .empty { color: var(--muted); font-style: italic; margin: 1rem 0 2rem; }
+.time-crystal-panel {
+    background: var(--surface); border: 1px solid #38bdf8;
+    border-radius: 8px; padding: 1rem; margin: 1.5rem 0 2rem;
+}
+.time-crystal-panel h2 { color: #38bdf8; border-color: #38bdf8; margin-top: 0; }
+.time-crystal-panel pre { max-height: 22rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.time-crystal-panel.unavailable { border-color: #f87171; }
+.time-crystal-panel.unavailable h2 { color: #f87171; border-color: #f87171; }
 code { background: var(--surface); border: 1px solid var(--border);
        padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
 /* Sync panels — collapsible biomarker-style (FR-20260513) */
@@ -1210,6 +1230,70 @@ _ORION_CSS = """
 """
 
 
+def _time_crystal_request() -> ComparativeRequest:
+    return ComparativeRequest(
+        protocol=FloquetIsingProtocol(
+            system_size=3,
+            periods=8,
+            repetitions=4,
+            pulse_angle=math.pi,
+            interaction_strength=0.15,
+            disorder_strength=0.1,
+        ),
+        noise_models=(NoiseConfig(), NoiseConfig(depolarizing_probability=0.05)),
+        perturbations=(Perturbation("none"), Perturbation("pulse_order_disruption")),
+        system_sizes=(3, 4),
+        seed=23,
+        max_cases=6,
+        stable_pulse_boundaries=True,
+    )
+
+
+def _build_time_crystal_panel() -> str:
+    request = _time_crystal_request()
+    matrix = run_comparative_matrix(request)
+    report = build_evidence_report(request, matrix)
+    encoded = report.to_json()
+    restored = EvidenceReport.from_json(encoded)
+    replay = replay_evidence_report(restored, request)
+    if not replay.matched:
+        raise ValueError("time-crystal report replay did not match")
+
+    payload = json.loads(encoded)
+    breakdown: dict[str, int] = {}
+    for case in payload["cases"]:
+        classification = case["classification"]
+        breakdown[classification] = breakdown.get(classification, 0) + 1
+    breakdown_text = ", ".join(
+        f"{_esc(name)}: {count}" for name, count in sorted(breakdown.items())
+    )
+    escaped_json = html.escape(encoded, quote=True)
+    return f"""
+<section id="time-crystal-evidence-panel" class="time-crystal-panel" data-read-only="true">
+  <h2>Time-Crystal Evidence</h2>
+  <p>Schema {_esc(payload["schema_version"])} · Request digest {_esc(replay.request_digest)} · Report digest {_esc(hashlib.sha256(encoded.encode("utf-8")).hexdigest())}</p>
+  <p>Cases: {len(payload["cases"])} / {payload["max_cases"]} · Classifications: {breakdown_text}</p>
+  <p>Replay validated · Fixed request: system size 3, periods 8, repetitions 4, pulse angle pi, noise 0 and 0.05, sizes 3 and 4, seed 23</p>
+  <details>
+    <summary>Read-only report JSON and per-case provenance</summary>
+    <pre id="time-crystal-report-json">{escaped_json}</pre>
+  </details>
+</section>
+"""
+
+
+def _safe_time_crystal_panel() -> str:
+    try:
+        return _build_time_crystal_panel()
+    except Exception as exc:  # noqa: BLE001
+        return f"""
+<section id="time-crystal-evidence-panel" class="time-crystal-panel unavailable" data-read-only="true">
+  <h2>Time-Crystal Evidence</h2>
+  <p><strong>Unavailable</strong>: {_esc(str(exc))}</p>
+</section>
+"""
+
+
 def generate_html(
     qpu_runs: list[dict],
     bench_runs: list[dict],
@@ -1260,6 +1344,7 @@ def generate_html(
         "vqe_monthly_benchmark", "&#129514;", "VQE Molecular Simulation",
         vqe_events, vqe_schedule,
     )
+    time_crystal_panel = _safe_time_crystal_panel()
 
     orion_tag = _get_orion_tag()
     orion_prompts_json = _load_orion_prompts_json()
@@ -1321,6 +1406,8 @@ def generate_html(
 {vqe_sync_panel}
 
 {shors_policy_panel}
+
+{time_crystal_panel}
 
 <div class="summary-grid">
   <div class="card qpu">
