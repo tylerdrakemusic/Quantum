@@ -40,6 +40,7 @@ graph TB
     Legacy --> Normalize
     Normalize --> Dashboard
     QuantumDB --> Dashboard
+    TimeCrystal -->|"EvidenceReport generation + replay panel"| Dashboard
     PackageCompat -.->|"see derived view"| Manifest
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
