@@ -37,15 +37,17 @@ QPU Budget
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import gcd
 from pathlib import Path
+from typing import Any
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent   # f:\⟨ψ⟩Quantum\
@@ -60,6 +62,12 @@ N_COUNT: int = 4                    # Counting qubits for QPE (4 gives ~93.75% s
 
 import execution_policy
 from quantum_toolkit.benchmark_provenance import adapt_result, persist_manifest
+from quantum_toolkit.execution_planner import (
+    AvailabilitySnapshot,
+    NormalizedRequest,
+    PlannerStatus,
+    plan_execution,
+)
 
 MAX_QPU_SECONDS: int = execution_policy.policy_qpu_cap_seconds(POLICY_ID, 300)
 
@@ -67,6 +75,8 @@ MAX_QPU_SECONDS: int = execution_policy.policy_qpu_cap_seconds(POLICY_ID, 300)
 # N=15 (8 qubits) always fits. N=21 (9 qubits) needs more depth.
 # On free tier with 300s budget, N=15 is the safe choice.
 CANDIDATE_N: list[int] = [15]       # Extend to [15, 21] when budget allows
+SCHEDULE_TOLERANCE_SECONDS = 15 * 60
+BACKEND_HEALTH_FRESHNESS_SECONDS = 60 * 60
 
 # ── Logging ────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -172,6 +182,85 @@ def _insert_result(
     )
     conn.commit()
     return cur.lastrowid
+
+
+def _parse_now_utc(value: str | datetime | None) -> datetime:
+    """Return a timezone-aware UTC timestamp for planning and provenance."""
+    if value is None:
+        return datetime.now(timezone.utc)
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("now_utc must include a timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def _monthly_schedule_window(now_utc: datetime) -> tuple[datetime, datetime]:
+    """Return this month's scheduled UTC instant plus/minus 15 minutes."""
+    schedule = execution_policy.policy_schedule(POLICY_ID)
+    scheduled = datetime(
+        now_utc.year,
+        now_utc.month,
+        int(schedule.get("day_of_month", 1)),
+        int(schedule.get("hour", 0)),
+        int(schedule.get("minute", 0)),
+        tzinfo=timezone.utc,
+    )
+    tolerance = timedelta(seconds=SCHEDULE_TOLERANCE_SECONDS)
+    return scheduled - tolerance, scheduled + tolerance
+
+
+def _load_backend_snapshots(
+    conn: Any,
+    now_utc: datetime,
+    max_qpu_seconds: int,
+) -> tuple[AvailabilitySnapshot, ...]:
+    """Normalize persisted monitor rows into conservative planner snapshots."""
+    rows = conn.execute(
+        """
+        SELECT provider, status, checked_at
+        FROM backend_health
+        WHERE id IN (SELECT MAX(id) FROM backend_health GROUP BY provider)
+        ORDER BY provider
+        """
+    ).fetchall()
+    snapshots: list[AvailabilitySnapshot] = []
+    for row in rows:
+        provider = str(row["provider"])
+        if provider == "ibm_quantum":
+            provider_id = "ibm-quantum"
+            execution_mode = "hardware"
+            max_qubits = 156
+            quota_remaining_seconds = float(max_qpu_seconds)
+        elif provider == "amazon_braket":
+            provider_id = "amazon-braket"
+            execution_mode = "simulator"
+            max_qubits = 32
+            quota_remaining_seconds = 0.0
+        else:
+            continue
+        snapshots.append(AvailabilitySnapshot.from_dict({
+            "provider_id": provider_id,
+            "provider": "ibm" if execution_mode == "hardware" else "braket",
+            "execution_mode": execution_mode,
+            "available": str(row["status"]) == "up",
+            "observed_at": str(row["checked_at"]),
+            "freshness_seconds": BACKEND_HEALTH_FRESHNESS_SECONDS,
+            "max_qubits": max_qubits,
+            "quota_remaining_seconds": quota_remaining_seconds,
+        }))
+    return tuple(snapshots)
+
+
+def _planner_event_detail(request: dict[str, Any], result: dict[str, Any]) -> str:
+    """Serialize planner inputs and outputs for policy-event observability."""
+    return json.dumps(
+        {"planner_request": request, "planner_result": result},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -418,6 +507,8 @@ def run_benchmark(
     n_value: int = 15,
     dry_run: bool = False,
     max_qpu_seconds: int = MAX_QPU_SECONDS,
+    approved: bool = False,
+    now_utc: str | datetime | None = None,
 ) -> dict:
     """Run Shor's algorithm on IBM Quantum hardware for the given N.
 
@@ -433,8 +524,65 @@ def run_benchmark(
     if n_value != 15:
         raise ValueError(f"Only N=15 is implemented in this runner. Got N={n_value}.")
     qc, n_total = _build_shor_circuit_n15(N_COUNT)
+    circuit_depth = int(qc.depth())
     _log.info("Circuit built: %d qubits, depth=%d, gate count=%d",
-              n_total, qc.depth(), sum(qc.count_ops().values()))
+              n_total, circuit_depth, sum(qc.count_ops().values()))
+
+    planning_now = _parse_now_utc(now_utc)
+    schedule_start, schedule_end = _monthly_schedule_window(planning_now)
+    planner_request = NormalizedRequest.from_dict({
+        "schema_version": "1.0",
+        "request_id": f"shors-n{n_value}-{planning_now.strftime('%Y%m%dT%H%M%SZ')}",
+        "qubits": n_total,
+        "depth": circuit_depth,
+        "shots": N_SHOTS,
+        "estimated_duration_seconds": max_qpu_seconds,
+        "requires_hardware": False,
+        "allow_simulator_fallback": True,
+        "hardware_approval_required": True,
+        "schedule_window": {
+            "start_utc": schedule_start.isoformat().replace("+00:00", "Z"),
+            "end_utc": schedule_end.isoformat().replace("+00:00", "Z"),
+        },
+    })
+
+    import init_db
+    if schedule_start <= planning_now <= schedule_end:
+        conn = init_db.get_connection()
+        try:
+            snapshots = _load_backend_snapshots(conn, planning_now, max_qpu_seconds)
+        finally:
+            conn.close()
+    else:
+        snapshots = ()
+    planner_result = plan_execution(
+        planner_request,
+        snapshots,
+        now_utc=planning_now,
+        approved=approved,
+    )
+    planner_request_dict = planner_request.to_dict()
+    planner_result_dict = planner_result.to_dict()
+    if planner_result.status is not PlannerStatus.RUNNABLE_HARDWARE_PLAN:
+        deferred = planner_result.status in {
+            PlannerStatus.DEFERRED,
+            PlannerStatus.FALLBACK_RECOMMENDED,
+        }
+        return {
+            "n_value": n_value,
+            "n_qubits": n_total,
+            "depth": circuit_depth,
+            "shots": N_SHOTS,
+            "success": False,
+            "factor_found": None,
+            "qpu_seconds": 0.0,
+            "backend": "planner",
+            "notes": "planner preflight did not permit hardware execution",
+            "deferred": deferred,
+            "planner_status": planner_result.status.value,
+            "planner_request": planner_request_dict,
+            "planner_result": planner_result_dict,
+        }
 
     if dry_run:
         _log.info("DRY RUN — circuit built but no IBM job submitted.")
@@ -446,6 +594,8 @@ def run_benchmark(
             "qpu_seconds": 0.0,
             "backend": "dry_run",
             "notes": "dry-run; no job submitted",
+            "planner_request": planner_request_dict,
+            "planner_result": planner_result_dict,
         }
 
     # ── Connect to IBM Quantum ──────────────────────────────────────────────
@@ -479,7 +629,6 @@ def run_benchmark(
     # ── Submit job — supervised via RetrySupervisor (retry/backoff + IBM call cap) ──
     _log.info("Submitting Shor's circuit to %s (%d shots) …", backend_name, N_SHOTS)
 
-    import init_db
     from job_retry_supervisor import Job, JobStatus, RetrySupervisor
 
     sampler = Sampler(backend)
@@ -569,8 +718,16 @@ def run_benchmark(
     result["provenance"] = adapt_result(
         "shor", result, run_id=outcome.get("ibm_job_id"),
         backend_name=backend_name,
-        configuration={"n_value": n_value, "n_qubits": n_total, "shots": N_SHOTS},
+        configuration={
+            "n_value": n_value,
+            "n_qubits": n_total,
+            "depth": circuit_depth,
+            "shots": N_SHOTS,
+            "planner_request": planner_request_dict,
+            "planner_result": planner_result_dict,
+        },
     )
+    result["planner_status"] = planner_result.status.value
     return result
 
 
@@ -656,6 +813,14 @@ def _parse_args() -> argparse.Namespace:
         help="Build circuit and connect, but do not submit the IBM job.",
     )
     parser.add_argument(
+        "--approved", action="store_true",
+        help="Explicitly approve a runnable hardware plan for this invocation.",
+    )
+    parser.add_argument(
+        "--now-utc", type=str, default="",
+        help="Planning timestamp override for controlled scheduled runs (ISO-8601 UTC).",
+    )
+    parser.add_argument(
         "--defer-reason",
         type=str,
         default="",
@@ -694,6 +859,8 @@ def main() -> None:
             n_value=args.n,
             dry_run=args.dry_run,
             max_qpu_seconds=args.max_qpu_seconds,
+            approved=args.approved,
+            now_utc=args.now_utc or None,
         )
     except Exception as exc:
         _log.error("Benchmark run failed: %s", exc)
@@ -702,6 +869,26 @@ def main() -> None:
             status="failed",
             detail=f"Benchmark execution failed: {exc}",
         )
+        sys.exit(1)
+
+    planner_status = result.get("planner_status")
+    if planner_status in {
+        PlannerStatus.DEFERRED.value,
+        PlannerStatus.FALLBACK_RECOMMENDED.value,
+    }:
+        detail = _planner_event_detail(result["planner_request"], result["planner_result"])
+        log_policy_event(event_type="planner_deferred", status="deferred", detail=detail)
+        _log.info("Planner deferred benchmark: %s", planner_status)
+        sys.exit(0)
+    if planner_status == PlannerStatus.APPROVAL_REQUIRED.value:
+        detail = _planner_event_detail(result["planner_request"], result["planner_result"])
+        log_policy_event(event_type="planner_approval_required", status="approval_required", detail=detail)
+        _log.error("Planner requires explicit --approved for hardware execution.")
+        sys.exit(2)
+    if planner_status == PlannerStatus.BLOCKED.value:
+        detail = _planner_event_detail(result["planner_request"], result["planner_result"])
+        log_policy_event(event_type="planner_blocked", status="blocked", detail=detail)
+        _log.error("Planner blocked benchmark: %s", result["planner_result"]["reason_codes"])
         sys.exit(1)
 
     if args.dry_run:
