@@ -37,3 +37,13 @@ Loading fails closed for malformed payloads and schema versions newer than
 identity digest, and serialized evidence. A mismatch raises
 `ReplayValidationError`; no new simulation or persistence mechanism is
 introduced by the report contract.
+
+## Compatibility and Replay Corpus
+
+The dashboard integration supports the `v1` report schema only. The reviewed
+UTF-8 fixtures in `tests/fixtures/time_crystal/` cover a valid deterministic
+round-trip, tampered evidence, malformed JSON, and an unsupported future
+schema. Loading and replay failures are isolated to the time-crystal panel;
+the dashboard title, benchmark history, and unrelated benchmark sections
+remain available. This release does not migrate `v2` payloads or add
+persistence, APIs, hardware execution, or expanded comparative fixtures.
