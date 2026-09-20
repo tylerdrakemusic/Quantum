@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -14,6 +15,7 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src" / "utils"))
 
 import init_db  # noqa: E402
 import run_shors_bench as rsb  # noqa: E402
+from quantum_toolkit.execution_planner import AvailabilitySnapshot  # noqa: E402
 
 
 @pytest.fixture
@@ -39,6 +41,181 @@ class _FakeQiskitSamplerResult:
         raise TypeError("'Result' object is not subscriptable")
 
 
+def _fake_circuit(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    fake_qc = MagicMock()
+    fake_qc.depth.return_value = 12
+    fake_qc.count_ops.return_value = {"cx": 10}
+    monkeypatch.setattr(rsb, "_build_shor_circuit_n15", lambda n_count: (fake_qc, 8))
+    return fake_qc
+
+
+def _hardware_snapshot(*, observed_at: str = "2026-09-01T08:00:00Z") -> AvailabilitySnapshot:
+    return AvailabilitySnapshot.from_dict({
+        "provider_id": "ibm-quantum",
+        "provider": "ibm",
+        "execution_mode": "hardware",
+        "available": True,
+        "observed_at": observed_at,
+        "freshness_seconds": 3600,
+        "max_qubits": 156,
+        "quota_remaining_seconds": 300,
+    })
+
+
+def _simulator_snapshot() -> AvailabilitySnapshot:
+    return AvailabilitySnapshot.from_dict({
+        "provider_id": "local-aer",
+        "provider": "local",
+        "execution_mode": "simulator",
+        "available": True,
+        "observed_at": "2026-09-01T07:59:59Z",
+        "freshness_seconds": 3600,
+        "max_qubits": 32,
+        "quota_remaining_seconds": 0,
+    })
+
+
+def test_planner_blocks_before_credentials_when_hardware_snapshot_is_missing(
+    monkeypatch: pytest.MonkeyPatch, quantum_db_env,
+) -> None:
+    _fake_circuit(monkeypatch)
+    monkeypatch.setattr(rsb, "_load_backend_snapshots", lambda *args: ())
+    monkeypatch.setattr(
+        rsb, "_get_ibm_credentials", lambda: pytest.fail("credentials must not be read"),
+    )
+
+    result = rsb.run_benchmark(
+        dry_run=False,
+        approved=True,
+        now_utc="2026-09-01T08:00:00Z",
+    )
+
+    assert result["planner_status"] == "blocked"
+    assert "no_provider_fit" in result["planner_result"]["reason_codes"]
+
+
+def test_planner_requires_explicit_approval_for_hardware(
+    monkeypatch: pytest.MonkeyPatch, quantum_db_env,
+) -> None:
+    _fake_circuit(monkeypatch)
+    monkeypatch.setattr(rsb, "_load_backend_snapshots", lambda *args: (_hardware_snapshot(),))
+    monkeypatch.setattr(
+        rsb, "_get_ibm_credentials", lambda: pytest.fail("approval must precede credentials"),
+    )
+
+    result = rsb.run_benchmark(
+        dry_run=False,
+        approved=False,
+        now_utc="2026-09-01T08:00:00Z",
+    )
+
+    assert result["planner_status"] == "approval_required"
+    assert result["planner_result"]["selected_provider_id"] == "ibm-quantum"
+
+
+def test_stale_hardware_recommends_fallback_and_does_not_run_simulator(
+    monkeypatch: pytest.MonkeyPatch, quantum_db_env,
+) -> None:
+    _fake_circuit(monkeypatch)
+    monkeypatch.setattr(
+        rsb, "_load_backend_snapshots",
+        lambda *args: (_hardware_snapshot(observed_at="2026-08-01T08:00:00Z"), _simulator_snapshot()),
+    )
+    monkeypatch.setattr(rsb, "_get_ibm_credentials", lambda: pytest.fail("stale hardware must defer"))
+
+    result = rsb.run_benchmark(
+        dry_run=False,
+        approved=True,
+        now_utc="2026-09-01T08:00:00Z",
+    )
+
+    assert result["planner_status"] == "fallback_recommended"
+    assert result["deferred"] is True
+    assert result["planner_result"]["selected_provider_id"] == "local-aer"
+
+
+def test_outside_monthly_window_defers_before_credentials(
+    monkeypatch: pytest.MonkeyPatch, quantum_db_env,
+) -> None:
+    _fake_circuit(monkeypatch)
+    monkeypatch.setattr(rsb, "_load_backend_snapshots", lambda *args: pytest.fail("health must not be read"))
+    monkeypatch.setattr(
+        rsb, "_get_ibm_credentials", lambda: pytest.fail("outside window must defer"),
+    )
+
+    result = rsb.run_benchmark(
+        dry_run=False,
+        approved=True,
+        now_utc="2026-09-01T09:00:01Z",
+    )
+
+    assert result["planner_status"] == "deferred"
+    assert result["deferred"] is True
+    assert "outside_schedule_window" in result["planner_result"]["reason_codes"]
+
+
+def test_load_backend_snapshots_reads_latest_persisted_health_rows(quantum_db_env) -> None:
+    conn = init_db.get_connection()
+    conn.execute(
+        "INSERT INTO backend_health (provider, status, checked_at) VALUES (?, ?, ?)",
+        ("ibm_quantum", "up", "2026-09-01T07:59:00Z"),
+    )
+    conn.execute(
+        "INSERT INTO backend_health (provider, status, checked_at) VALUES (?, ?, ?)",
+        ("amazon_braket", "up", "2026-09-01T07:59:00Z"),
+    )
+    conn.commit()
+
+    snapshots = rsb._load_backend_snapshots(
+        conn, datetime(2026, 9, 1, 8, tzinfo=timezone.utc), rsb.MAX_QPU_SECONDS,
+    )
+    conn.close()
+
+    assert [snapshot.provider_id for snapshot in snapshots] == ["amazon-braket", "ibm-quantum"]
+    assert snapshots[1].execution_mode == "hardware"
+    assert snapshots[1].available is True
+
+
+@pytest.mark.parametrize(
+    ("planner_status", "expected_exit"),
+    [("deferred", 0), ("fallback_recommended", 0), ("blocked", 1), ("approval_required", 2)],
+)
+def test_main_records_planner_payload_and_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+    planner_status: str,
+    expected_exit: int,
+) -> None:
+    args = argparse.Namespace(
+        n=15,
+        max_qpu_seconds=rsb.MAX_QPU_SECONDS,
+        dry_run=False,
+        defer_reason="",
+        manual_override_note="",
+        approved=False,
+        now_utc="2026-09-01T08:00:00Z",
+    )
+    result = {
+        "planner_status": planner_status,
+        "planner_request": {"request_id": "request-1"},
+        "planner_result": {"status": planner_status, "reason_codes": ["test"]},
+    }
+    events: list[dict[str, str]] = []
+    monkeypatch.setattr(rsb, "_parse_args", lambda: args)
+    monkeypatch.setattr(rsb, "run_benchmark", lambda **kwargs: result)
+    monkeypatch.setattr(
+        rsb, "log_policy_event", lambda **kwargs: events.append(kwargs),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        rsb.main()
+
+    assert exc_info.value.code == expected_exit
+    planner_event = events[-1]
+    assert planner_event["status"] in {"deferred", "blocked", "approval_required"}
+    assert '"planner_request"' in planner_event["detail"]
+    assert '"planner_result"' in planner_event["detail"]
+
+
 def test_run_shors_bench_uses_result_get_counts(monkeypatch: pytest.MonkeyPatch, quantum_db_env) -> None:
     """The benchmark should use result.get_counts() when supported."""
     fake_counts = {"0010": 4096}
@@ -47,6 +224,7 @@ def test_run_shors_bench_uses_result_get_counts(monkeypatch: pytest.MonkeyPatch,
     fake_qc.count_ops.return_value = {"cx": 10}
 
     monkeypatch.setattr(rsb, "_build_shor_circuit_n15", lambda n_count: (fake_qc, 8))
+    monkeypatch.setattr(rsb, "_load_backend_snapshots", lambda *args: (_hardware_snapshot(),))
     monkeypatch.setattr(rsb, "_get_ibm_credentials", lambda: ("key", "instance"))
 
     fake_backend = MagicMock()
@@ -78,7 +256,9 @@ def test_run_shors_bench_uses_result_get_counts(monkeypatch: pytest.MonkeyPatch,
     ibm_runtime.QiskitRuntimeService.return_value = MagicMock()
     monkeypatch.setitem(sys.modules, "qiskit_ibm_runtime", ibm_runtime)
 
-    result = rsb.run_benchmark(dry_run=False)
+    result = rsb.run_benchmark(
+        dry_run=False, approved=True, now_utc="2026-09-01T08:00:00Z",
+    )
 
     assert result["backend"] == "fake-backend"
     assert result["qpu_seconds"] == 1.23
@@ -92,6 +272,7 @@ def _patch_common_circuit_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_qc.depth.return_value = 4
     fake_qc.count_ops.return_value = {"cx": 10}
     monkeypatch.setattr(rsb, "_build_shor_circuit_n15", lambda n_count: (fake_qc, 8))
+    monkeypatch.setattr(rsb, "_load_backend_snapshots", lambda *args: (_hardware_snapshot(),))
     monkeypatch.setattr(rsb, "_get_ibm_credentials", lambda: ("key", "instance"))
 
     fake_backend = MagicMock()
@@ -131,7 +312,14 @@ def test_run_shors_bench_job_wired_through_retry_supervisor(
     ibm_runtime.QiskitRuntimeService.return_value = MagicMock()
     monkeypatch.setitem(sys.modules, "qiskit_ibm_runtime", ibm_runtime)
 
-    rsb.run_benchmark(dry_run=False)
+    result = rsb.run_benchmark(
+        dry_run=False, approved=True, now_utc="2026-09-01T08:00:00Z",
+    )
+
+    assert result["provenance"]["configuration"]["depth"] == 4
+    assert result["provenance"]["configuration"]["shots"] == rsb.N_SHOTS
+    assert result["provenance"]["configuration"]["planner_result"]["status"] == "runnable_hardware_plan"
+    rsb.persist_result(result)
 
     conn = init_db.get_connection()
     row = conn.execute(
@@ -166,7 +354,9 @@ def test_run_shors_bench_permanent_job_failure_raises_and_records_status(
     monkeypatch.setattr(job_retry_supervisor.time, "sleep", lambda *_a, **_kw: None)
 
     with pytest.raises(RuntimeError, match="shors-n15"):
-        rsb.run_benchmark(dry_run=False)
+        rsb.run_benchmark(
+            dry_run=False, approved=True, now_utc="2026-09-01T08:00:00Z",
+        )
 
     conn = init_db.get_connection()
     row = conn.execute(
@@ -196,7 +386,7 @@ def test_main_dashboard_regen_uses_static_mode_with_timeout(monkeypatch: pytest.
 
     monkeypatch.setattr(rsb, "_parse_args", lambda: argparse.Namespace(
         n=15, max_qpu_seconds=rsb.MAX_QPU_SECONDS, dry_run=False,
-        defer_reason="", manual_override_note="",
+        defer_reason="", manual_override_note="", approved=False, now_utc="",
     ))
     monkeypatch.setattr(rsb, "log_policy_event", MagicMock())
     monkeypatch.setattr(rsb, "run_benchmark", lambda **kwargs: fake_result)
