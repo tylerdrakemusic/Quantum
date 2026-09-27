@@ -26,17 +26,17 @@ EXPECTED_MANIFEST = {
                 "diagrams/quantum-package-compatibility.mmd",
             ],
         },
-        "metrics": {"utf8_characters": 3227, "utf8_bytes": 3232, "nodes": 35, "edges": 21},
+        "metrics": {"utf8_characters": 3381, "utf8_bytes": 3404, "nodes": 40, "edges": 27},
     },
     "diagrams/quantum-db-schema.mmd": {
         "kind": "database-schema",
         "category": "database-schema",
         "split_required": False,
         "lineage": {"parent": None, "derived_views": []},
-        "metrics": {"utf8_characters": 3451, "utf8_bytes": 3451, "nodes": 10, "edges": 8},
+        "metrics": {"utf8_characters": 3022, "utf8_bytes": 3022, "nodes": 14, "edges": 0},
     },
     "diagrams/quantum-derived-cache-integrity.mmd": {
-        "kind": "derived-lifecycle",
+        "kind": "architecture-detail",
         "category": "detail",
         "split_required": False,
         "lineage": {
@@ -46,7 +46,7 @@ EXPECTED_MANIFEST = {
         "metrics": {"utf8_characters": 2743, "utf8_bytes": 2743, "nodes": 28, "edges": 14},
     },
     "diagrams/quantum-randomness-service.mmd": {
-        "kind": "detail",
+        "kind": "architecture-detail",
         "category": "detail",
         "split_required": False,
         "lineage": {
@@ -56,7 +56,7 @@ EXPECTED_MANIFEST = {
         "metrics": {"utf8_characters": 3813, "utf8_bytes": 3822, "nodes": 47, "edges": 31},
     },
     "diagrams/quantum-package-compatibility.mmd": {
-        "kind": "detail",
+        "kind": "architecture-detail",
         "category": "detail",
         "split_required": False,
         "lineage": {
@@ -70,7 +70,7 @@ EXPECTED_MANIFEST = {
         "category": "technology-stack",
         "split_required": False,
         "lineage": {"parent": None, "derived_views": []},
-        "metrics": {"utf8_characters": 3236, "utf8_bytes": 3247, "nodes": 30, "edges": 9},
+        "metrics": {"utf8_characters": 2505, "utf8_bytes": 2522, "nodes": 27, "edges": 10},
     },
 }
 

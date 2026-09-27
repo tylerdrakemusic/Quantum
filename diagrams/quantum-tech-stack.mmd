@@ -1,45 +1,41 @@
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a2e3a', 'primaryTextColor': '#d0ecf8', 'edgeLabelBackground': '#0f1318', 'lineColor': '#4a7a9a'}}}%%
 graph TB
-    subgraph Experiments["⟨ψ⟩ Quantum experiments"]
-        Shor[Shor benchmark]:::quantum
-        VQE[VQE benchmark]:::quantum
-        QAOA[QAOA-family experiments]:::quantum
-        QEC[QEC examples]:::quantum
-        Kernel[Quantum-kernel experiment]:::quantum
+    subgraph Experiments["⟨ψ⟩ Quantum request families"]
+        Shor[Shor]:::quantum
+        VQE[VQE]:::quantum
+        QAOA[QAOA]:::quantum
+        QEC[QEC]:::quantum
+        Kernel[Quantum kernel]:::quantum
     end
-    subgraph Provenance["Versioned benchmark provenance"]
-        Adapter[quantum_toolkit.benchmark_provenance<br/>adapt_result]:::quantum
-        Replay[quantum_toolkit.benchmark_replay<br/>seeded replay + compare_metrics]:::quantum
-        Manifest[manifest version 1.0<br/>identity · execution · backend<br/>configuration · result<br/>timestamp + evidence references]:::state
-        Legacy[normalize_result<br/>legacy read-time view]:::quantum
-        Tolerance[tolerance version 2026-09-05<br/>family absolute + relative limits]:::state
+    subgraph Control["Provider-neutral execution control"]
+        Plane[execution_control_plane.py<br/>normalize · classify · gate]:::quantum
+        Request[NormalizedRequest v1.0<br/>five-family contract]:::state
+        Planner[execution_planner.py<br/>side-effect-free plan]:::quantum
+        Snapshot[AvailabilitySnapshot<br/>freshness · capacity · quota]:::state
+        Gates[health · quota · credential-safe<br/>retry · schedule · policy · approval]:::state
     end
-    subgraph Runtime["Quantum runtime and persistence"]
+    subgraph Runtime["Guarded runtime and persistence"]
         Python[Python 3.11]:::quantum
         Qiskit[qiskit · qiskit-aer<br/>qiskit-algorithms]:::quantum
         Chem[qiskit-nature<br/>openfermion]:::quantum
         Numpy[numpy · scipy]:::quantum
-        IBMRuntime[Injected IBM Runtime client<br/>credential-safe capture]:::ext
-        Resubmit[Operator-approved bounded retry<br/>quota + failed-job gate]:::state
+        Simulator[Local simulator<br/>seeded replay]:::quantum
+        IBM[Guarded IBM Quantum adapter]:::ext
+        Braket[Guarded Amazon Braket adapter]:::ext
+        Health[Backend health + retry status]:::state
         Database[(quantumpsi.db<br/>SQLCipher)]:::db
-        ReplayTable[(benchmark_replays<br/>family index · normalized rows)]:::db
-        Dashboard[gen_benchmark_dashboard.py<br/>benchmark_dashboard.html]:::quantum
+        Lifecycle[(execution_lifecycle<br/>decisions · evidence)]:::db
     end
-    subgraph Distribution["Package build and isolated CI consumption"]
-        PackageBuild[/python -m build<br/>sdist + wheel<br/>dist/*.whl + dist/*.tar.gz/]:::quantum
-        ContentCheck[/check_package_contents.py<br/>required + forbidden paths/]:::quantum
-        ConsumerVenv[isolated consumer venv<br/>--no-index --find-links dist]:::state
-        ApiSmoke[/package_smoke.py<br/>public API + compatibility smoke<br/>validation reports + uploaded artifacts/]:::quantum
-    end
-    Shor --> Adapter; VQE --> Adapter; QAOA --> Adapter; QEC --> Adapter; Kernel --> Adapter
-    Python --> Experiments; Python --> Adapter; Python --> Qiskit; Python --> Chem; Python --> Numpy
-    Python --> PackageBuild
-    PackageBuild --> ContentCheck
-    PackageBuild ==> ConsumerVenv
-    ConsumerVenv --> ApiSmoke
-    Adapter ==> Manifest; Manifest ==> Database
-    Replay --> Tolerance; Replay --> IBMRuntime --> Resubmit; Replay ==> ReplayTable --> Dashboard
-    Database --> Dashboard; Legacy --> Dashboard
+    Shor --> Plane; VQE --> Plane; QAOA --> Plane; QEC --> Plane; Kernel --> Plane
+    Python --> Plane; Python --> Planner; Python --> Qiskit; Python --> Chem; Python --> Numpy
+    Plane ==> Request --> Planner
+    Planner --> Snapshot --> Gates
+    Gates --> Simulator
+    Gates --> IBM
+    Gates --> Braket
+    Health --> Snapshot; Health --> Gates
+    Simulator ==> Lifecycle; IBM ==> Lifecycle; Braket ==> Lifecycle
+    Lifecycle ==> Database
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
 classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
