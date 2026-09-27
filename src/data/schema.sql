@@ -50,6 +50,34 @@ CREATE TABLE IF NOT EXISTS benchmark_replays (
 CREATE INDEX IF NOT EXISTS idx_benchmark_replays_family
     ON benchmark_replays(family);
 
+CREATE TABLE IF NOT EXISTS execution_lifecycle (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id TEXT NOT NULL,
+    family TEXT NOT NULL,
+    state TEXT NOT NULL,
+    decision_status TEXT NOT NULL,
+    reason_codes_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS execution_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id TEXT NOT NULL,
+    family TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reason_codes_json TEXT NOT NULL,
+    provider_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS execution_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id TEXT NOT NULL,
+    evidence_type TEXT NOT NULL,
+    reference TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS shor_replay_benchmarks (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id              TEXT NOT NULL,
