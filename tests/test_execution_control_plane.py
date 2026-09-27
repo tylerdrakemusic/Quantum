@@ -13,6 +13,7 @@ from quantum_toolkit.execution_control_plane import (
     LifecycleState,
     SUPPORTED_FAMILIES,
 )
+from quantum_toolkit.execution_planner import AvailabilitySnapshot
 
 
 def request_payload() -> dict[str, object]:
@@ -54,7 +55,18 @@ def test_all_benchmark_families_normalize_to_control_plane_requests() -> None:
 def test_simulator_completes_and_persists_provenance_replay_evidence() -> None:
     conn = sqlite3.connect(":memory:")
     plane = ControlPlane()
-    request = plane.normalize("qaoa", {**request_payload(), "parameters": {"api_key": "must-not-persist"}})
+    request = plane.normalize(
+        "qaoa",
+        {
+            **request_payload(),
+            "parameters": {
+                "api_key": "must-not-persist",
+                "IBM_CLOUD_API_KEY": "ibm-secret",
+                "AWS_SECRET_ACCESS_KEY": "aws-secret",
+                "backend_name": "simulator",
+            },
+        },
+    )
 
     result = plane.execute_simulator(
         request,
@@ -72,6 +84,39 @@ def test_simulator_completes_and_persists_provenance_replay_evidence() -> None:
     assert conn.execute("SELECT COUNT(*) FROM benchmark_replays").fetchone()[0] == 1
     manifest = conn.execute("SELECT manifest_json FROM benchmark_provenance").fetchone()[0]
     assert "must-not-persist" not in manifest
+    assert "ibm-secret" not in manifest
+    assert "aws-secret" not in manifest
+    assert "IBM_CLOUD_API_KEY" not in manifest
+    assert "AWS_SECRET_ACCESS_KEY" not in manifest
+    assert "simulator" in manifest
+
+
+def test_snapshot_classification_requires_explicit_approval_for_hardware() -> None:
+    plane = ControlPlane()
+    request = plane.normalize("shor", request_payload())
+    hardware = AvailabilitySnapshot.from_dict(
+        {
+            "provider_id": "ibm-fez",
+            "provider": "ibm",
+            "execution_mode": "hardware",
+            "available": True,
+            "observed_at": "2026-09-19T11:59:00Z",
+            "freshness_seconds": 3600,
+            "max_qubits": 156,
+            "quota_remaining_seconds": 60,
+        }
+    )
+
+    decision = plane.classify_from_snapshots(
+        request,
+        (hardware,),
+        all_gates(),
+        now_utc="2026-09-19T12:00:00Z",
+        approved=False,
+    )
+
+    assert decision.status is DecisionStatus.APPROVAL_REQUIRED
+    assert decision.provider_id == "ibm-fez"
 
 
 def test_hardware_plan_requires_all_gates_and_explicit_approval() -> None:

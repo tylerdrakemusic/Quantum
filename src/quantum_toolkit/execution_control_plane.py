@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 import json
 from typing import Any, Callable, Mapping, Protocol
@@ -194,7 +194,10 @@ class ControlPlane:
             return Decision(DecisionStatus.BLOCKED, plan.reason_codes, plan.selected_provider_id)
         if plan.status is PlannerStatus.RUNNABLE_SIMULATOR:
             return Decision(DecisionStatus.SUCCEEDED, plan.reason_codes, plan.selected_provider_id)
-        return self.plan_hardware(request, gates, plan.selected_provider_id)
+        if plan.status is PlannerStatus.APPROVAL_REQUIRED:
+            return Decision(DecisionStatus.APPROVAL_REQUIRED, plan.reason_codes, plan.selected_provider_id)
+        hardware_gates = gates if approved else replace(gates, approval=False)
+        return self.plan_hardware(request, hardware_gates, plan.selected_provider_id)
 
     def execute_simulator(
         self,
@@ -251,12 +254,19 @@ class AmazonBraketAdapter(_GuardedAdapter):
 
 
 _SECRET_FIELDS = {"api_key", "apikey", "token", "password", "secret", "credential"}
+_SECRET_SUFFIXES = ("_api_key", "_access_key", "_secret", "_token", "_password", "_credential")
+
+
+def _is_secret_field(key: Any) -> bool:
+    normalized = str(key).lower().replace("-", "_")
+    return normalized in _SECRET_FIELDS or normalized.endswith(_SECRET_SUFFIXES)
 
 
 def _redact(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {
-            str(key): "[REDACTED]" if str(key).lower() in _SECRET_FIELDS else _redact(item)
+            "[REDACTED]" if _is_secret_field(key) else str(key):
+            "[REDACTED]" if _is_secret_field(key) else _redact(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
