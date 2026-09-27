@@ -31,7 +31,7 @@
     },
     {
       "path": "diagrams/quantum-derived-cache-integrity.mmd",
-      "kind": "derived-lifecycle",
+      "kind": "architecture-detail",
       "renderer_risk": "medium",
       "fallback_risk": "medium",
       "split_required": false,
@@ -42,7 +42,7 @@
     },
     {
       "path": "diagrams/quantum-randomness-service.mmd",
-      "kind": "detail",
+      "kind": "architecture-detail",
       "renderer_risk": "medium",
       "fallback_risk": "medium",
       "split_required": false,
@@ -53,7 +53,7 @@
     },
     {
       "path": "diagrams/quantum-package-compatibility.mmd",
-      "kind": "detail",
+      "kind": "architecture-detail",
       "renderer_risk": "medium",
       "fallback_risk": "medium",
       "split_required": false,

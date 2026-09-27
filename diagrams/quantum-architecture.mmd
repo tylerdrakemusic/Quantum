@@ -2,46 +2,55 @@
 %% is_derived_view=false
 %% Traceability.derived_views: diagrams/quantum-derived-cache-integrity.mmd, diagrams/quantum-randomness-service.mmd, diagrams/quantum-package-compatibility.mmd
 graph TB
-    Shor[Shor benchmark<br/>tools/run_shors_bench.py]:::quantum
-    VQE[VQE benchmark<br/>tools/bench_vqe.py]:::quantum
-    QAOA[QAOA-family experiments<br/>qaoa.py]:::quantum
-    QEC[QEC examples<br/>src/qec_examples.py]:::quantum
-    Kernel[Quantum-kernel experiment<br/>src/quantum_kernel_svm.py]:::quantum
-    Contract[benchmark_provenance.py<br/>adapt_result + normalize_result]:::quantum
-    Replay[benchmark_replay.py<br/>seeded replay + family comparison]:::quantum
-    Tolerance[Versioned tolerance contract<br/>2026-09-05 · absolute + relative]:::state
-    RuntimeCapture[IBM Runtime capture<br/>credential-safe metadata]:::ext
-    RuntimePolicy[Bounded resubmission policy<br/>operator approval + quota gate]:::state
-    Manifest[Versioned benchmark manifest<br/>manifest_version 1.0<br/>identity · execution · backend<br/>configuration · result · evidence]:::state
+    Shor[Shor]:::quantum
+    VQE[VQE]:::quantum
+    QAOA[QAOA]:::quantum
+    QEC[QEC]:::quantum
+    Kernel[Quantum kernel]:::quantum
+    ControlPlane[Provider-neutral control plane<br/>execution_control_plane.py]:::quantum
+    Normalized[Normalized request v1.0<br/>qubits · depth · shots<br/>duration · fallback · approval]:::state
+    Planner[Side-effect-free execution planner<br/>execution_planner.py]:::quantum
+    Snapshots[Availability snapshots<br/>freshness · capacity · quota]:::state
+    Classifier[Simulator or hardware classification]:::state
+    Gates[Health · quota · credential-safe<br/>retry · schedule · policy · approval]:::state
+    Simulator[Local simulator execution<br/>seeded replay]:::quantum
+    IBM[Guarded IBM Quantum adapter]:::ext
+    Braket[Guarded Amazon Braket adapter]:::ext
+    Replay[Replay + provenance adapters<br/>existing benchmark contracts]:::quantum
+    Evidence[Evidence references<br/>provenance · replay · artifacts]:::state
     QuantumDB[(quantumpsi.db<br/>SQLCipher)]:::db
-    ReplayRows[benchmark_replays<br/>normalized replay rows]:::db
-    Legacy[Historical benchmark rows<br/>unchanged source data]:::db
-    Normalize[Dashboard legacy normalization<br/>provenance_status = legacy]:::quantum
-    Dashboard[reports/benchmark_dashboard.html<br/>generated dashboard]:::store
-    Backends[IBM Quantum + local Aer<br/>configured experiment backends]:::ext
+    Lifecycle[Append-only execution lifecycle<br/>received → normalized → planned<br/>→ running → completed or blocked]:::state
+    Decisions[Append-only execution decisions<br/>status · reason codes · provider]:::state
+    Health[Backend health and retry status]:::state
     PackageCompat[Derived package compatibility view<br/>installed API + smoke boundary]:::state
     TimeCrystal[Isolated local-only time-crystal capability<br/>src/time_crystal<br/>Floquet Ising dynamics + typed evidence]:::quantum
-    Shor --> Contract
-    VQE --> Contract
-    QAOA --> Contract
-    QEC --> Contract
-    Kernel --> Contract
-    Contract ==> Manifest
-    Contract --> Replay
-    Replay --> Tolerance
-    Replay ==> ReplayRows
-    Replay --> RuntimeCapture
-    RuntimeCapture --> RuntimePolicy
-    RuntimePolicy -.->|"one approved retry via injected Runtime client"| RuntimeCapture
-    Shor --> Backends
-    VQE --> Backends
-    Manifest ==> QuantumDB
-    ReplayRows --> Dashboard
-    Legacy --> Normalize
-    Normalize --> Dashboard
-    QuantumDB --> Dashboard
-    TimeCrystal -->|"EvidenceReport generation + replay panel"| Dashboard
-    PackageCompat -.->|"see derived view"| Manifest
+    Shor --> ControlPlane
+    VQE --> ControlPlane
+    QAOA --> ControlPlane
+    QEC --> ControlPlane
+    Kernel --> ControlPlane
+    ControlPlane --> Normalized --> Planner
+    Planner --> Snapshots
+    Planner --> Classifier
+    Classifier --> Gates
+    Gates --> Simulator
+    Gates --> IBM
+    Gates --> Braket
+    Simulator --> Replay
+    IBM --> Replay
+    Braket --> Replay
+    Replay ==> Evidence
+    ControlPlane ==> Lifecycle
+    ControlPlane ==> Decisions
+    Lifecycle ==> QuantumDB
+    Decisions ==> QuantumDB
+    Evidence ==> QuantumDB
+    Health --> Snapshots
+    Health --> Gates
+    Health -.->|bounded retry and health gates| IBM
+    Health -.->|bounded retry and health gates| Braket
+    TimeCrystal -->|"EvidenceReport generation + replay panel"| Evidence
+    PackageCompat -.->|"see derived view"| ControlPlane
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
 classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
