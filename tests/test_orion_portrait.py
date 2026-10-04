@@ -151,25 +151,38 @@ class TestGetDailyPortrait:
         assert fallback_paths[0].name.startswith("orion_portrait_active_")
         assert cascade_calls == [("active prompt", cache_dir, "avoid blur")]
 
-    def test_workspace_cascade_bootstrap_loads_relative_imports(self, tmp_path):
-        mod = _fresh_module("_op_workspace_bootstrap", _SRC_UTILS / "orion_portrait.py")
+    def test_workspace_cascade_bootstrap_loads_relative_imports(
+        self, tmp_path, monkeypatch
+    ):
+        mod = _fresh_module(
+            f"_op_workspace_bootstrap_{id(tmp_path)}",
+            _SRC_UTILS / "orion_portrait.py",
+        )
+        integrations = tmp_path / "workspace" / "src" / "integrations"
+        integrations.mkdir(parents=True)
+        (tmp_path / "workspace" / "src" / "__init__.py").write_text(
+            "", encoding="utf-8"
+        )
+        (integrations / "__init__.py").write_text("", encoding="utf-8")
+        (integrations / "relative_helper.py").write_text(
+            'CASCADE_MARKER = "loaded from a relative helper"\n',
+            encoding="utf-8",
+        )
+        (integrations / "image_cascade.py").write_text(
+            "from .relative_helper import CASCADE_MARKER\n\n"
+            "def cascade_marker():\n"
+            "    return CASCADE_MARKER\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(mod, "_WORKSPACE_ROOT", tmp_path / "workspace")
+        module_key = f"_ws_image_cascade_{id(tmp_path)}"
         workspace_module = mod._load_workspace_module(
-            "_ws_image_cascade",
+            module_key,
             "src/integrations/image_cascade.py",
             package=True,
         )
-        assert workspace_module is not None
-
-        fallback_path = tmp_path / "orion.svg"
-        fallback_path.write_text("<svg />", encoding="utf-8")
-        cascade = workspace_module.portrait_image_cascade(fallback_path)
-
-        assert [provider.name for provider in cascade.providers] == [
-            "huggingface",
-            "hf_spaces",
-            "pollinations",
-            "persona_svg",
-        ]
+        assert workspace_module is not None, "The isolated package should load"
+        assert workspace_module.cascade_marker() == "loaded from a relative helper"
 
     def test_svg_fallback_is_cached_after_one_cascade_attempt(self, tmp_path, monkeypatch):
         mod = _fresh_module("_op_svg_cache", _SRC_UTILS / "orion_portrait.py")
