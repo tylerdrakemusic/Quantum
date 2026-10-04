@@ -27,6 +27,7 @@ import importlib.util
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from types import ModuleType
 
 # ---------------------------------------------------------------------------
 # Workspace integration path bootstrap
@@ -34,12 +35,18 @@ from pathlib import Path
 _WORKSPACE_ROOT = Path(r"f:\⊕Workspace")
 
 
-def _load_workspace_module(module_key: str, relative: str):
+def _load_workspace_module(
+    module_key: str, relative: str, *, package: bool = False
+) -> ModuleType | None:
     """Load a module from ⊕Workspace by file path, bypassing src namespace conflicts."""
     if module_key in sys.modules:
         return sys.modules[module_key]
     file_path = _WORKSPACE_ROOT / relative
-    spec = importlib.util.spec_from_file_location(module_key, file_path)
+    spec = importlib.util.spec_from_file_location(
+        module_key,
+        file_path,
+        submodule_search_locations=[str(file_path.parent)] if package else None,
+    )
     if spec is None or spec.loader is None:
         return None
     module = importlib.util.module_from_spec(spec)
@@ -178,14 +185,22 @@ def _today_cache_path(mode: str) -> Path:
     return _IMAGE_CACHE_DIR / f"orion_portrait_{mode}_{today}.png"
 
 
-def _prune_old_portraits() -> None:
-    """Keep only the _MAX_CACHED_PORTRAITS most recent Orion portrait files."""
-    portraits = sorted(_IMAGE_CACHE_DIR.glob("orion_portrait_*.png"), reverse=True)
-    for old in portraits[_MAX_CACHED_PORTRAITS:]:
-        try:
-            old.unlink()
-        except OSError:
-            pass
+def _prune_old_portraits(mode: str | None = None) -> None:
+    """Keep the most recent portraits per mode, including SVG fallbacks."""
+    modes = (mode,) if mode is not None else _VALID_MODES
+    for portrait_mode in modes:
+        portraits = sorted(
+            (
+                *_IMAGE_CACHE_DIR.glob(f"orion_portrait_{portrait_mode}_*.png"),
+                *_IMAGE_CACHE_DIR.glob(f"orion_portrait_{portrait_mode}_*.svg"),
+            ),
+            reverse=True,
+        )
+        for old in portraits[_MAX_CACHED_PORTRAITS:]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -318,12 +333,8 @@ def get_daily_portrait(mode: str | None = None) -> Path:
 
     Generation cascade:
     1. Determine run-state mode (or use provided override).
-    2. Return cached portrait if already generated today for this mode.
-    3. Try DALL-E 3 (requires ``OPENAPI_TOKEN``).
-    4. Fall back to HuggingFace Inference API (requires ``HF_TOKEN`` with credits).
-    5. Try HuggingFace Spaces FLUX.1-schnell (free, ZeroGPU quota).
-    6. Try Pollinations.AI (free, photorealistic, no API key required).
-    7. Fall back to inline SVG silhouette (always succeeds).
+    2. Return today's cached PNG or SVG for that mode.
+    3. Generate through the shared portrait cascade, ending with Orion's SVG.
 
     Parameters
     ----------
@@ -343,40 +354,44 @@ def get_daily_portrait(mode: str | None = None) -> Path:
     today_path = _today_cache_path(mode)
     if today_path.exists():
         return today_path
+    fallback_path = _IMAGE_CACHE_DIR / f"orion_portrait_{mode}_{date.today().isoformat()}.svg"
+    if fallback_path.exists():
+        return fallback_path
 
     positive_prompt, negative_prompt = _build_prompt(mode)
     save_dir = _IMAGE_CACHE_DIR
+    fallback_path = _svg_fallback_path(mode)
+    cascade_module = _load_workspace_module(
+        "_ws_image_cascade",
+        "src/integrations/image_cascade.py",
+        package=True,
+    )
+    if cascade_module is None:
+        _prune_old_portraits(mode)
+        return fallback_path
 
-    # 1. DALL-E 3 (primary)
-    result = _try_dalle3(positive_prompt, save_dir)
-    if result and result.exists():
-        result.replace(today_path)
-        _prune_old_portraits()
+    try:
+        result = cascade_module.portrait_image_cascade(fallback_path).generate(
+            positive_prompt,
+            output_dir=save_dir,
+            negative_prompt=negative_prompt,
+        )
+        if result.path == fallback_path:
+            _prune_old_portraits(mode)
+            return fallback_path
+        if not result.path.exists():
+            _prune_old_portraits(mode)
+            return fallback_path
+        result.path.replace(today_path)
+        try:
+            fallback_path.unlink()
+        except OSError:
+            pass
+        _prune_old_portraits(mode)
         return today_path
-
-    # 2. HuggingFace Inference API
-    result = _try_huggingface(positive_prompt, save_dir, negative_prompt=negative_prompt)
-    if result and result.exists():
-        result.replace(today_path)
-        _prune_old_portraits()
-        return today_path
-
-    # 3. HuggingFace Spaces FLUX.1-schnell
-    result = _try_hf_spaces(positive_prompt, save_dir)
-    if result and result.exists():
-        result.replace(today_path)
-        _prune_old_portraits()
-        return today_path
-
-    # 4. Pollinations.AI
-    result = _try_pollinations(positive_prompt, save_dir)
-    if result and result.exists():
-        result.replace(today_path)
-        _prune_old_portraits()
-        return today_path
-
-    # 5. SVG silhouette fallback (always succeeds)
-    return _svg_fallback_path(mode)
+    except Exception:
+        _prune_old_portraits(mode)
+        return fallback_path
 
 
 def get_portrait_img_tag(max_width: int = 160, mode: str | None = None) -> str:

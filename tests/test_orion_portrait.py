@@ -18,6 +18,7 @@ import importlib.util
 import sqlite3
 import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -48,6 +49,43 @@ def _fresh_module(name: str, file: Path):
     return mod
 
 
+def _install_offline_svg_cascade(
+    monkeypatch: pytest.MonkeyPatch,
+    module: ModuleType,
+    *,
+    fail: bool = False,
+) -> None:
+    """Replace remote providers with a deterministic local SVG result."""
+    for name in ("_try_dalle3", "_try_huggingface", "_try_hf_spaces", "_try_pollinations"):
+        monkeypatch.setattr(module, name, lambda *args, **kwargs: None)
+
+    class FakeCascade:
+        def __init__(self, fallback_path: Path) -> None:
+            self.fallback_path = fallback_path
+
+        def generate(
+            self,
+            prompt: str,
+            *,
+            output_dir: Path,
+            negative_prompt: str | None,
+        ) -> SimpleNamespace:
+            if fail:
+                raise RuntimeError("mocked providers are unavailable")
+            return SimpleNamespace(path=self.fallback_path)
+
+    class FakeWorkspaceModule:
+        @staticmethod
+        def portrait_image_cascade(persona_svg: Path) -> FakeCascade:
+            return FakeCascade(persona_svg)
+
+    monkeypatch.setattr(
+        module,
+        "_load_workspace_module",
+        lambda module_key, relative, **kwargs: FakeWorkspaceModule,
+    )
+
+
 # ---------------------------------------------------------------------------
 # AC1 — get_daily_portrait returns a valid Path for all 3 modes
 # ---------------------------------------------------------------------------
@@ -58,6 +96,7 @@ class TestGetDailyPortrait:
     def test_returns_path_for_each_mode(self, tmp_path, monkeypatch, mode):
         mod = _fresh_module(f"_op_ac1_{mode}", _SRC_UTILS / "orion_portrait.py")
         monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", tmp_path)
+        _install_offline_svg_cascade(monkeypatch, mod)
         result = mod.get_daily_portrait(mode)
         assert isinstance(result, Path), f"Expected Path, got {type(result)}"
         assert result.exists(), f"Portrait file does not exist: {result}"
@@ -81,6 +120,96 @@ class TestGetDailyPortrait:
         result = mod.get_daily_portrait("idle")
         assert result == today_path
         assert call_count["n"] == 0, "Should not call DALL-E when cache file already exists"
+
+    def test_uses_shared_cascade_with_configured_mode_prompt(self, tmp_path, monkeypatch):
+        mod = _fresh_module("_op_shared_cascade", _SRC_UTILS / "orion_portrait.py")
+        cache_dir = tmp_path / "cache"
+        monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", cache_dir)
+        monkeypatch.setattr(mod, "_build_prompt", lambda mode: ("active prompt", "avoid blur"))
+        for name in ("_try_dalle3", "_try_huggingface", "_try_hf_spaces", "_try_pollinations"):
+            monkeypatch.setattr(mod, name, lambda *args, **kwargs: None)
+
+        generated_path = tmp_path / "generated.png"
+        generated_path.write_bytes(b"offline image")
+        cascade_calls = []
+        fallback_paths = []
+
+        class FakeCascade:
+            def generate(self, prompt, *, output_dir, negative_prompt):
+                cascade_calls.append((prompt, output_dir, negative_prompt))
+                return SimpleNamespace(path=generated_path)
+
+        class FakeWorkspaceModule:
+            @staticmethod
+            def portrait_image_cascade(persona_svg):
+                fallback_paths.append(persona_svg)
+                assert persona_svg.suffix == ".svg"
+                assert "<svg" in persona_svg.read_text(encoding="utf-8")
+                return FakeCascade()
+
+        monkeypatch.setattr(
+            mod,
+            "_load_workspace_module",
+            lambda module_key, relative, **kwargs: FakeWorkspaceModule,
+        )
+
+        result = mod.get_daily_portrait("active")
+
+        assert result == mod._today_cache_path("active")
+        assert result.read_bytes() == b"offline image"
+        assert fallback_paths[0].name.startswith("orion_portrait_active_")
+        assert cascade_calls == [("active prompt", cache_dir, "avoid blur")]
+
+    def test_workspace_cascade_bootstrap_loads_relative_imports(self, tmp_path):
+        mod = _fresh_module("_op_workspace_bootstrap", _SRC_UTILS / "orion_portrait.py")
+        workspace_module = mod._load_workspace_module(
+            "_ws_image_cascade",
+            "src/integrations/image_cascade.py",
+            package=True,
+        )
+        assert workspace_module is not None
+
+        fallback_path = tmp_path / "orion.svg"
+        fallback_path.write_text("<svg />", encoding="utf-8")
+        cascade = workspace_module.portrait_image_cascade(fallback_path)
+
+        assert [provider.name for provider in cascade.providers] == [
+            "huggingface",
+            "hf_spaces",
+            "pollinations",
+            "persona_svg",
+        ]
+
+    def test_svg_fallback_is_cached_after_one_cascade_attempt(self, tmp_path, monkeypatch):
+        mod = _fresh_module("_op_svg_cache", _SRC_UTILS / "orion_portrait.py")
+        monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", tmp_path)
+        for name in ("_try_dalle3", "_try_huggingface", "_try_hf_spaces", "_try_pollinations"):
+            monkeypatch.setattr(mod, name, lambda *args, **kwargs: None)
+        attempts = []
+
+        class FakeCascade:
+            def generate(self, prompt, *, output_dir, negative_prompt):
+                attempts.append(prompt)
+                raise RuntimeError("offline providers unavailable")
+
+        class FakeWorkspaceModule:
+            @staticmethod
+            def portrait_image_cascade(persona_svg):
+                return FakeCascade()
+
+        monkeypatch.setattr(
+            mod,
+            "_load_workspace_module",
+            lambda module_key, relative, **kwargs: FakeWorkspaceModule,
+        )
+
+        first = mod.get_daily_portrait("idle")
+        second = mod.get_daily_portrait("idle")
+
+        assert first == second
+        assert first.suffix == ".svg"
+        assert "<svg" in first.read_text(encoding="utf-8")
+        assert attempts == [mod._FALLBACK_PROMPTS["idle"]]
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +318,21 @@ class TestPortraitCaching:
                 f"Expected date {d!r} to be in retained portraits"
             )
 
+    def test_pruning_is_limited_to_a_mode(self, tmp_path, monkeypatch):
+        mod = _fresh_module("_op_ac5_modes", _SRC_UTILS / "orion_portrait.py")
+        monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", tmp_path)
+        dates = [f"2026-05-{day:02d}" for day in range(1, 6)]
+        for mode in ("idle", "active"):
+            for day in dates:
+                (tmp_path / f"orion_portrait_{mode}_{day}.png").write_bytes(b"image")
+
+        mod._prune_old_portraits("idle")
+
+        idle = sorted(path.name for path in tmp_path.glob("orion_portrait_idle_*.png"))
+        active = sorted(path.name for path in tmp_path.glob("orion_portrait_active_*.png"))
+        assert idle == [f"orion_portrait_idle_{day}.png" for day in dates[-3:]]
+        assert active == [f"orion_portrait_active_{day}.png" for day in dates]
+
 
 # ---------------------------------------------------------------------------
 # AC6 — Fallback chain: always succeeds with SVG silhouette
@@ -199,10 +343,7 @@ class TestFallbackChain:
     def test_svg_fallback_when_all_apis_fail(self, tmp_path, monkeypatch):
         mod = _fresh_module("_op_ac6", _SRC_UTILS / "orion_portrait.py")
         monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", tmp_path)
-        monkeypatch.setattr(mod, "_try_dalle3", lambda *a, **kw: None)
-        monkeypatch.setattr(mod, "_try_huggingface", lambda *a, **kw: None)
-        monkeypatch.setattr(mod, "_try_hf_spaces", lambda *a, **kw: None)
-        monkeypatch.setattr(mod, "_try_pollinations", lambda *a, **kw: None)
+        _install_offline_svg_cascade(monkeypatch, mod, fail=True)
         result = mod.get_daily_portrait("idle")
         assert result.exists(), "SVG fallback file should exist"
         assert result.suffix in (".svg", ".png"), (
@@ -212,10 +353,7 @@ class TestFallbackChain:
     def test_svg_fallback_content_is_valid_svg(self, tmp_path, monkeypatch):
         mod = _fresh_module("_op_ac6_svg", _SRC_UTILS / "orion_portrait.py")
         monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", tmp_path)
-        monkeypatch.setattr(mod, "_try_dalle3", lambda *a, **kw: None)
-        monkeypatch.setattr(mod, "_try_huggingface", lambda *a, **kw: None)
-        monkeypatch.setattr(mod, "_try_hf_spaces", lambda *a, **kw: None)
-        monkeypatch.setattr(mod, "_try_pollinations", lambda *a, **kw: None)
+        _install_offline_svg_cascade(monkeypatch, mod, fail=True)
         result = mod.get_daily_portrait("idle")
         if result.suffix == ".svg":
             content = result.read_text(encoding="utf-8")
@@ -232,6 +370,7 @@ class TestPortraitImgTag:
     def test_returns_img_tag(self, tmp_path, monkeypatch, mode):
         mod = _fresh_module(f"_op_tag_{mode}", _SRC_UTILS / "orion_portrait.py")
         monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", tmp_path)
+        _install_offline_svg_cascade(monkeypatch, mod)
         tag = mod.get_portrait_img_tag(max_width=120, mode=mode)
         assert tag.startswith("<img"), f"Expected <img> tag, got: {tag[:60]!r}"
         assert "data:" in tag, "Expected data-URI in <img> src"
@@ -240,6 +379,7 @@ class TestPortraitImgTag:
     def test_img_tag_contains_orion_label(self, tmp_path, monkeypatch):
         mod = _fresh_module("_op_tag_label", _SRC_UTILS / "orion_portrait.py")
         monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", tmp_path)
+        _install_offline_svg_cascade(monkeypatch, mod)
         tag = mod.get_portrait_img_tag(max_width=80, mode="idle")
         assert "Orion" in tag, f"Expected 'Orion' label in img tag, got: {tag!r}"
 
@@ -259,6 +399,23 @@ class TestDashboardIntegration:
         assert "orion" in html_out.lower(), (
             "Expected 'orion' somewhere in generated HTML"
         )
+
+    def test_offline_dashboard_embeds_svg_portrait_image(self, tmp_path, monkeypatch):
+        portrait = _fresh_module("_op_dashboard_svg", _SRC_UTILS / "orion_portrait.py")
+        monkeypatch.setattr(portrait, "_IMAGE_CACHE_DIR", tmp_path / "cache")
+        _install_offline_svg_cascade(monkeypatch, portrait)
+        image_tag = portrait.get_portrait_img_tag(max_width=120, mode="result_ready")
+
+        dash = _fresh_module("_gbd_offline_svg", _TOOLS / "gen_benchmark_dashboard.py")
+        monkeypatch.setattr(dash, "_get_orion_tag", lambda mode=None: image_tag)
+        html_out = dash.generate_html([], [], [], "2026-05-30T00:00:00Z", [], {})
+        proof_html = tmp_path / "benchmark_dashboard_offline.html"
+        proof_html.write_text(html_out, encoding="utf-8")
+
+        assert image_tag in html_out
+        assert 'src="data:image/svg+xml;base64,' in html_out
+        assert 'alt="Orion' in html_out
+        assert proof_html.is_file()
 
     def test_generate_html_contains_edit_button(self, tmp_path, monkeypatch):
         dash = _fresh_module("_gbd_edit", _TOOLS / "gen_benchmark_dashboard.py")

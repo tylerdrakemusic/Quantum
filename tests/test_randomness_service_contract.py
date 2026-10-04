@@ -587,7 +587,7 @@ def test_worker_refills_at_or_below_twenty_five_percent():
 
 def test_scheduled_worker_refills_after_shared_consumption_crosses_threshold(tmp_path):
     store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
-    store.publish(["0" * 100], generated_at="2026-09-01T00:00:00Z")
+    store.publish(["0" * 100], generated_at=datetime.now(timezone.utc).isoformat())
     random_bytes(10, store)
 
     now = [datetime(2026, 9, 1, 6, 59, tzinfo=timezone.utc)]
@@ -642,7 +642,7 @@ def test_scheduled_worker_refills_after_shared_consumption_crosses_threshold(tmp
 
 def test_fresh_deployment_initializes_ledger_without_unconditional_scheduled_refill(tmp_path):
     store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
-    store.publish(["0" * 100], generated_at="2026-09-01T00:00:00Z")
+    store.publish(["0" * 100], generated_at=datetime.now(timezone.utc).isoformat())
     assert not store.consumption_path.exists()
 
     provider_calls: list[int] = []
