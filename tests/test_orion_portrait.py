@@ -56,9 +56,6 @@ def _install_offline_svg_cascade(
     fail: bool = False,
 ) -> None:
     """Replace remote providers with a deterministic local SVG result."""
-    for name in ("_try_dalle3", "_try_huggingface", "_try_hf_spaces", "_try_pollinations"):
-        monkeypatch.setattr(module, name, lambda *args, **kwargs: None)
-
     class FakeCascade:
         def __init__(self, fallback_path: Path) -> None:
             self.fallback_path = fallback_path
@@ -109,25 +106,19 @@ class TestGetDailyPortrait:
         today_path = mod._today_cache_path("idle")
         today_path.parent.mkdir(parents=True, exist_ok=True)
         today_path.write_bytes(b"FAKE_PNG")
-        call_count = {"n": 0}
-        original_dalle = mod._try_dalle3
-
-        def _counting_dalle3(*a, **kw):
-            call_count["n"] += 1
-            return original_dalle(*a, **kw)
-
-        monkeypatch.setattr(mod, "_try_dalle3", _counting_dalle3)
+        monkeypatch.setattr(
+            mod,
+            "_load_workspace_module",
+            lambda *args, **kwargs: pytest.fail("Cache hit should skip the cascade"),
+        )
         result = mod.get_daily_portrait("idle")
         assert result == today_path
-        assert call_count["n"] == 0, "Should not call DALL-E when cache file already exists"
 
     def test_uses_shared_cascade_with_configured_mode_prompt(self, tmp_path, monkeypatch):
         mod = _fresh_module("_op_shared_cascade", _SRC_UTILS / "orion_portrait.py")
         cache_dir = tmp_path / "cache"
         monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", cache_dir)
         monkeypatch.setattr(mod, "_build_prompt", lambda mode: ("active prompt", "avoid blur"))
-        for name in ("_try_dalle3", "_try_huggingface", "_try_hf_spaces", "_try_pollinations"):
-            monkeypatch.setattr(mod, name, lambda *args, **kwargs: None)
 
         generated_path = tmp_path / "generated.png"
         generated_path.write_bytes(b"offline image")
@@ -183,8 +174,6 @@ class TestGetDailyPortrait:
     def test_svg_fallback_is_cached_after_one_cascade_attempt(self, tmp_path, monkeypatch):
         mod = _fresh_module("_op_svg_cache", _SRC_UTILS / "orion_portrait.py")
         monkeypatch.setattr(mod, "_IMAGE_CACHE_DIR", tmp_path)
-        for name in ("_try_dalle3", "_try_huggingface", "_try_hf_spaces", "_try_pollinations"):
-            monkeypatch.setattr(mod, name, lambda *args, **kwargs: None)
         attempts = []
 
         class FakeCascade:
