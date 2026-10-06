@@ -256,16 +256,20 @@ def plan_execution(
         reasons.append("hardware_required")
         return PlanResult(PlannerStatus.BLOCKED, None, tuple(reasons or ["no_hardware_fit"]))
     if eligible_simulators:
+        if not request.allow_simulator_fallback:
+            reasons.append("simulator_fallback_not_allowed")
+            return PlanResult(PlannerStatus.BLOCKED, None, tuple(reasons))
+        selected_simulator = min(
+            eligible_simulators,
+            key=lambda snapshot: (snapshot.provider_id != "local-aer", snapshot.provider_id),
+        )
         if stale_hardware:
             reasons.append("hardware_fallback_allowed")
-            return PlanResult(
-                PlannerStatus.FALLBACK_RECOMMENDED,
-                eligible_simulators[0].provider_id,
-                tuple(reasons),
-            )
+        else:
+            reasons.append("simulator_capability_fit")
         return PlanResult(
             PlannerStatus.RUNNABLE_SIMULATOR,
-            eligible_simulators[0].provider_id,
-            ("simulator_capability_fit",),
+            selected_simulator.provider_id,
+            tuple(reasons),
         )
     return PlanResult(PlannerStatus.BLOCKED, None, tuple(reasons or ["no_provider_fit"]))

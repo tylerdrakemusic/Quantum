@@ -44,6 +44,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from math import gcd
 from pathlib import Path
@@ -251,6 +252,23 @@ def _load_backend_snapshots(
             "max_qubits": max_qubits,
             "quota_remaining_seconds": quota_remaining_seconds,
         }))
+    try:
+        from qiskit_aer import AerSimulator
+    except ImportError:
+        pass
+    else:
+        if AerSimulator is not None:
+            observed_at = now_utc.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            snapshots.append(AvailabilitySnapshot.from_dict({
+                "provider_id": "local-aer",
+                "provider": "local",
+                "execution_mode": "simulator",
+                "available": True,
+                "observed_at": observed_at,
+                "freshness_seconds": BACKEND_HEALTH_FRESHNESS_SECONDS,
+                "max_qubits": 32,
+                "quota_remaining_seconds": 0,
+            }))
     return tuple(snapshots)
 
 
@@ -563,7 +581,62 @@ def run_benchmark(
     )
     planner_request_dict = planner_request.to_dict()
     planner_result_dict = planner_result.to_dict()
-    if planner_result.status is not PlannerStatus.RUNNABLE_HARDWARE_PLAN:
+
+    def _result_from_counts(
+        counts: dict[str, int],
+        qpu_seconds: float,
+        backend_name: str,
+        run_id: str | None,
+    ) -> dict[str, Any]:
+        a = 7
+        phases = _phase_from_counts(counts, N_COUNT)
+        r = None
+        factors = None
+        best_phase = None
+        for phase in phases:
+            r_candidate = _order_from_phase(phase, n_value)
+            if r_candidate:
+                factors_candidate = _factors_from_order(a, r_candidate, n_value)
+                if factors_candidate:
+                    r = r_candidate
+                    factors = factors_candidate
+                    best_phase = phase
+                    break
+                elif r is None:
+                    r = r_candidate
+                    best_phase = phase
+        if best_phase is None and phases:
+            best_phase = phases[0]
+        success = factors is not None
+        factor_found = f"{factors[0]},{factors[1]}" if factors else None
+        notes = f"a=7, N_COUNT={N_COUNT}, phase={best_phase}, r={r}, job={run_id or 'local-aer'}"
+        result = {
+            "n_value": n_value,
+            "n_qubits": n_total,
+            "success": success,
+            "factor_found": factor_found,
+            "qpu_seconds": qpu_seconds,
+            "backend": backend_name,
+            "notes": notes,
+        }
+        result["provenance"] = adapt_result(
+            "shor", result, run_id=run_id, backend_name=backend_name,
+            configuration={
+                "n_value": n_value,
+                "n_qubits": n_total,
+                "depth": circuit_depth,
+                "shots": N_SHOTS,
+                "planner_request": planner_request_dict,
+                "planner_result": planner_result_dict,
+            },
+        )
+        result["planner_status"] = planner_result.status.value
+        return result
+
+    if planner_result.status not in (
+        PlannerStatus.RUNNABLE_HARDWARE_PLAN,
+        PlannerStatus.RUNNABLE_SIMULATOR,
+    ):
         deferred = planner_result.status in {
             PlannerStatus.DEFERRED,
             PlannerStatus.FALLBACK_RECOMMENDED,
@@ -597,6 +670,16 @@ def run_benchmark(
             "planner_request": planner_request_dict,
             "planner_result": planner_result_dict,
         }
+
+    if planner_result.status is PlannerStatus.RUNNABLE_SIMULATOR:
+        from qiskit import transpile
+        from qiskit_aer import AerSimulator
+
+        simulator = AerSimulator()
+        transpiled = transpile(qc, simulator)
+        simulation = simulator.run(transpiled, shots=N_SHOTS).result()
+        counts = _extract_counts_from_qiskit_result(simulation)
+        return _result_from_counts(counts, 0.0, "local-aer", None)
 
     # ── Connect to IBM Quantum ──────────────────────────────────────────────
     try:
@@ -670,75 +753,30 @@ def run_benchmark(
 
     # ── Extract measurement counts ─────────────────────────────────────────
     counts = outcome["counts"]
-
-    _log.info("Top 5 measurement outcomes:")
-    for bitstr, cnt in sorted(counts.items(), key=lambda x: -x[1])[:5]:
-        _log.info("  %s : %d (%.1f%%)", bitstr, cnt, 100 * cnt / N_SHOTS)
-
-    # ── Interpret results — try each non-zero phase in order of frequency ──
-    a = 7
-    phases = _phase_from_counts(counts, N_COUNT)
-    r = None
-    factors = None
-    best_phase = None
-    for ph in phases:
-        r_candidate = _order_from_phase(ph, n_value)
-        if r_candidate:
-            factors_candidate = _factors_from_order(a, r_candidate, n_value)
-            if factors_candidate:
-                r = r_candidate
-                factors = factors_candidate
-                best_phase = ph
-                break
-            elif r is None:  # keep first valid order even if trivial factors
-                r = r_candidate
-                best_phase = ph
-    if best_phase is None and phases:
-        best_phase = phases[0]
-    success = factors is not None
-    factor_found = f"{factors[0]},{factors[1]}" if factors else None
-
-    _log.info("Top non-zero phases: %s", phases[:5])
-    _log.info("Best phase: %s", best_phase)
-    _log.info("Order r: %s", r)
-    _log.info("Factors: %s", factor_found if factor_found else "not found")
-    _log.info("Success: %s", success)
-
-    notes = f"a=7, N_COUNT={N_COUNT}, phase={best_phase}, r={r}, job={outcome['ibm_job_id']}"
-
-    result = {
-        "n_value": n_value,
-        "n_qubits": n_total,
-        "success": success,
-        "factor_found": factor_found,
-        "qpu_seconds": qpu_seconds,
-        "backend": backend_name,
-        "notes": notes,
-    }
-    result["provenance"] = adapt_result(
-        "shor", result, run_id=outcome.get("ibm_job_id"),
-        backend_name=backend_name,
-        configuration={
-            "n_value": n_value,
-            "n_qubits": n_total,
-            "depth": circuit_depth,
-            "shots": N_SHOTS,
-            "planner_request": planner_request_dict,
-            "planner_result": planner_result_dict,
-        },
+    return _result_from_counts(
+        counts,
+        qpu_seconds,
+        backend_name,
+        outcome.get("ibm_job_id"),
     )
-    result["planner_status"] = planner_result.status.value
-    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # DB persistence
 # ═══════════════════════════════════════════════════════════════════════════
 
-def log_policy_event(*, event_type: str, status: str, detail: str) -> None:
+def log_policy_event(
+    *, event_type: str, status: str, detail: str, attempt_id: str | None = None,
+) -> None:
     """Persist one benchmark policy event for UI observability."""
     import init_db
 
+    if attempt_id is not None:
+        detail = json.dumps(
+            {"attempt_id": attempt_id, "message": detail},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     next_run_at = execution_policy.next_run_iso(POLICY_ID)
     conn = init_db.get_connection()
     _ensure_policy_events_table(conn)
@@ -837,22 +875,31 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    attempt_id = uuid.uuid4().hex
+
+    def log_attempt_event(*, event_type: str, status: str, detail: str) -> None:
+        log_policy_event(
+            event_type=event_type,
+            status=status,
+            detail=detail,
+            attempt_id=attempt_id,
+        )
 
     if args.defer_reason.strip():
         detail = f"Deferred benchmark run: {args.defer_reason.strip()}"
-        log_policy_event(event_type="run_deferred", status="deferred", detail=detail)
+        log_attempt_event(event_type="run_deferred", status="deferred", detail=detail)
         _log.info(detail)
         sys.exit(0)
 
     if args.manual_override_note.strip():
         detail = f"Manual override noted: {args.manual_override_note.strip()}"
-        log_policy_event(event_type="manual_override", status="manual_override", detail=detail)
+        log_attempt_event(event_type="manual_override", status="manual_override", detail=detail)
 
     started_detail = (
         f"Started benchmark; schedule={execution_policy.schedule_label(POLICY_ID)}; "
         f"qpu_cap={args.max_qpu_seconds}s"
     )
-    log_policy_event(event_type="run_started", status="started", detail=started_detail)
+    log_attempt_event(event_type="run_started", status="started", detail=started_detail)
 
     try:
         result = run_benchmark(
@@ -864,7 +911,7 @@ def main() -> None:
         )
     except Exception as exc:
         _log.error("Benchmark run failed: %s", exc)
-        log_policy_event(
+        log_attempt_event(
             event_type="run_completed",
             status="failed",
             detail=f"Benchmark execution failed: {exc}",
@@ -877,23 +924,23 @@ def main() -> None:
         PlannerStatus.FALLBACK_RECOMMENDED.value,
     }:
         detail = _planner_event_detail(result["planner_request"], result["planner_result"])
-        log_policy_event(event_type="planner_deferred", status="deferred", detail=detail)
+        log_attempt_event(event_type="planner_deferred", status="deferred", detail=detail)
         _log.info("Planner deferred benchmark: %s", planner_status)
         sys.exit(0)
     if planner_status == PlannerStatus.APPROVAL_REQUIRED.value:
         detail = _planner_event_detail(result["planner_request"], result["planner_result"])
-        log_policy_event(event_type="planner_approval_required", status="approval_required", detail=detail)
+        log_attempt_event(event_type="planner_approval_required", status="approval_required", detail=detail)
         _log.error("Planner requires explicit --approved for hardware execution.")
         sys.exit(2)
     if planner_status == PlannerStatus.BLOCKED.value:
         detail = _planner_event_detail(result["planner_request"], result["planner_result"])
-        log_policy_event(event_type="planner_blocked", status="blocked", detail=detail)
+        log_attempt_event(event_type="planner_blocked", status="blocked", detail=detail)
         _log.error("Planner blocked benchmark: %s", result["planner_result"]["reason_codes"])
         sys.exit(1)
 
     if args.dry_run:
         _log.info("Dry run complete. No DB write, no dashboard update.")
-        log_policy_event(
+        log_attempt_event(
             event_type="run_completed",
             status="skipped",
             detail="Dry-run executed; no IBM submission and no persistence.",
@@ -906,7 +953,7 @@ def main() -> None:
         print_db_row(row_id)
     except Exception as exc:
         _log.error("Failed to insert DB row: %s", exc)
-        log_policy_event(
+        log_attempt_event(
             event_type="run_completed",
             status="failed",
             detail=f"Benchmark succeeded but DB persistence failed: {exc}",
@@ -935,7 +982,7 @@ def main() -> None:
         f"backend={result['backend']}; qpu_seconds={result['qpu_seconds']:.1f}; "
         f"factors={result['factor_found'] or 'none'}"
     )
-    log_policy_event(event_type="run_completed", status=event_status, detail=status_detail)
+    log_attempt_event(event_type="run_completed", status=event_status, detail=status_detail)
 
     status = "SUCCESS" if result["success"] else "FAILED (no factors)"
     print(f"\n{'='*56}")

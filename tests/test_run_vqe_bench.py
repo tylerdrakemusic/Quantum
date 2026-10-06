@@ -70,6 +70,74 @@ def test_log_policy_event_writes_policy_events_row(monkeypatch: pytest.MonkeyPat
     assert row["status"] == "started"
 
 
+def test_main_correlates_started_and_terminal_events_with_attempt_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = type(
+        "Args",
+        (),
+        {
+            "defer_reason": "",
+            "manual_override_note": "",
+            "backend": "aer",
+            "max_qpu_seconds": rvb.MAX_QPU_SECONDS,
+            "dry_run": True,
+        },
+    )()
+    events: list[dict[str, str]] = []
+    monkeypatch.setitem(sys.modules, "init_db", MagicMock(get_connection=MagicMock(return_value=MagicMock())))
+    monkeypatch.setattr(rvb, "_parse_args", lambda: args)
+    monkeypatch.setattr(rvb, "_ensure_policy_events_table", lambda conn: None)
+    monkeypatch.setattr(rvb, "resolve_backend_choice", lambda *args, **kwargs: ("aer", None))
+    monkeypatch.setattr(rvb, "log_policy_event", lambda **kwargs: events.append(kwargs))
+
+    with pytest.raises(SystemExit) as exc_info:
+        rvb.main()
+
+    assert exc_info.value.code == 0
+    started = next(event for event in events if event["event_type"] == "run_started")
+    terminal = next(event for event in events if event["event_type"] == "run_completed")
+    assert started["attempt_id"]
+    assert started["attempt_id"] == terminal["attempt_id"]
+
+
+def test_main_reports_partial_job_failure_as_failed_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = type(
+        "Args",
+        (),
+        {
+            "defer_reason": "",
+            "manual_override_note": "",
+            "backend": "aer",
+            "max_qpu_seconds": rvb.MAX_QPU_SECONDS,
+            "dry_run": False,
+            "molecule": "h2",
+            "ansatz": "UCCSD",
+            "seed": 17,
+            "no_dashboard": True,
+        },
+    )()
+    events: list[dict[str, str]] = []
+    monkeypatch.setitem(sys.modules, "init_db", MagicMock(get_connection=MagicMock(return_value=MagicMock())))
+    monkeypatch.setattr(rvb, "_parse_args", lambda: args)
+    monkeypatch.setattr(rvb, "_ensure_policy_events_table", lambda conn: None)
+    monkeypatch.setattr(rvb, "resolve_backend_choice", lambda *args, **kwargs: ("aer", None))
+    monkeypatch.setattr(
+        rvb, "run_all_molecules",
+        lambda *args, **kwargs: ([{"molecule": "h2", "ac_met": True}], True),
+    )
+    monkeypatch.setattr(rvb, "log_policy_event", lambda **kwargs: events.append(kwargs))
+
+    with pytest.raises(SystemExit) as exc_info:
+        rvb.main()
+
+    assert exc_info.value.code == 1
+    terminal = next(event for event in events if event["event_type"] == "run_completed")
+    assert terminal["status"] == "failed"
+
+
 def test_shared_qpu_budget_is_loaded_from_execution_policy() -> None:
     """The shared IBM free-tier budget must come from execution policy config."""
     assert execution_policy.policy_shared_qpu_budget_seconds() == 600

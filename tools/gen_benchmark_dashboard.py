@@ -401,6 +401,7 @@ def _load_schedule_policy(policy_id: str = "shors_monthly_benchmark") -> dict:
             "minute": int(schedule.get("minute", 0)),
             "task_name": schedule.get("task_name", policy_id),
             "qpu_cap": int(data.get("qpu_caps_seconds", {}).get(policy_id, 300)),
+            "run_timeout_seconds": int(data.get("run_timeouts_seconds", {}).get(policy_id, 900)),
             "missing": False,
         }
     except Exception as exc:
@@ -622,11 +623,11 @@ def _badge(success: bool, factor_found: str = "") -> str:
 
 def _policy_badge(status: str) -> str:
     low = (status or "").lower()
-    if low in ("succeeded", "started"):
+    if low == "succeeded":
         return f'<span class="badge success">{_esc(low.upper())}</span>'
-    if low in ("failed", "deferred", "manual_override"):
+    if low in ("failed", "blocked", "timed_out", "timed-out"):
         return f'<span class="badge fail">{_esc(low.upper())}</span>'
-    if low in ("skipped",):
+    if low in ("started", "active", "deferred", "approval_required", "approval-required", "skipped"):
         return f'<span class="badge warn">{_esc(low.upper())}</span>'
     return '<span class="badge warn">UNKNOWN</span>'
 
@@ -722,22 +723,101 @@ def _build_sync_panel(
     title: str,
     events: list[dict],
     schedule_policy: dict,
+    now_utc: datetime | str | None = None,
 ) -> str:
     """Build a biomarker-style collapsible sync-status panel for a policy."""
     latest = events[0] if events else None
-    latest_status = (latest["status"] if latest else "").lower()
+    timeout_seconds = int(schedule_policy.get("run_timeout_seconds", 900))
 
-    if latest_status in ("succeeded", "started"):
+    def parse_time(value: datetime | str | None) -> datetime | None:
+        if value is None:
+            return None
+        try:
+            parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def attempt_id(event: dict) -> str | None:
+        try:
+            payload = json.loads(event.get("detail") or "")
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return payload.get("attempt_id") if isinstance(payload, dict) else None
+
+    def terminal_status(event: dict) -> str | None:
+        event_type = str(event.get("event_type") or "").lower()
+        status = str(event.get("status") or "").lower()
+        if event_type == "planner_blocked":
+            return "blocked"
+        if event_type == "planner_approval_required":
+            return "approval-required"
+        if event_type in ("planner_deferred", "run_deferred"):
+            return "deferred"
+        if event_type != "run_completed":
+            return None
+        return {
+            "succeeded": "succeeded",
+            "failed": "failed",
+            "deferred": "deferred",
+            "blocked": "blocked",
+            "approval_required": "approval-required",
+            "approval-required": "approval-required",
+            "skipped": "skipped",
+            "timed_out": "timed-out",
+            "timed-out": "timed-out",
+        }.get(status)
+
+    start_index = next(
+        (index for index, event in enumerate(events) if event.get("event_type") == "run_started"),
+        None,
+    )
+    if start_index is None:
+        run_status = terminal_status(latest) if latest else None
+        run_status = run_status or "unknown"
+        started_at = None
+        status_detail = str(latest.get("detail") or "") if latest else ""
+    else:
+        started = events[start_index]
+        current_attempt_id = attempt_id(started)
+        matching_events = [
+            event for index, event in enumerate(events)
+            if index < start_index
+            and (attempt_id(event) == current_attempt_id if current_attempt_id else True)
+        ]
+        terminal = next(
+            (event for event in matching_events
+             if event.get("event_type") != "run_started" and terminal_status(event) is not None),
+            None,
+        )
+        started_at = str(started.get("event_time") or "")
+        if terminal is not None:
+            run_status = terminal_status(terminal) or "unknown"
+            status_detail = str(terminal.get("detail") or "")
+        else:
+            current_time = parse_time(now_utc) or datetime.now(timezone.utc)
+            start_time = parse_time(started_at)
+            if start_time is not None and (current_time - start_time).total_seconds() >= timeout_seconds:
+                run_status = "timed-out"
+                status_detail = (
+                    f"No terminal report after {timeout_seconds}s; "
+                    "provider cancellation is not inferred."
+                )
+            else:
+                run_status = "active"
+                status_detail = "No terminal event has been reported yet."
+
+    if run_status == "succeeded":
         health_cls = "success"
-        health_label = "&#10003; Healthy"
-    elif latest_status in ("failed", "deferred", "manual_override"):
+    elif run_status in ("failed", "blocked", "timed-out"):
         health_cls = "fail"
-        health_label = "&#10007; Failing"
     else:
         health_cls = "warn"
-        health_label = "&#8631; Degraded"
+    health_label = run_status.upper()
 
-    last_run = _esc(latest["event_time"]) if latest else "&mdash;"
+    last_run = _esc(started_at or (latest["event_time"] if latest else "")) if latest else "&mdash;"
     if latest and latest.get("next_run_at"):
         next_run = _esc(latest["next_run_at"])
     else:
@@ -773,10 +853,13 @@ def _build_sync_panel(
   <div class="sync-category-body">
     <div class="sync-pills">
       <span class="sync-pill">Last run start: <strong>{last_run}</strong></span>
+            <span class="sync-pill">Run status: <strong>{_esc(health_label)}</strong></span>
       <span class="sync-pill">Next scheduled run: <strong>{next_run}</strong></span>
       <span class="sync-pill">Policy: <strong>{task_name}</strong></span>
       <span class="sync-pill">QPU cap: <strong>{_esc(str(qpu_cap))}s</strong></span>
+            <span class="sync-pill">Run timeout: <strong>{timeout_seconds}s</strong></span>
     </div>
+        <p class="sync-run-note">{_esc(status_detail)}</p>
     <table class="sync-table">
       <thead>
         <tr><th>Event Time</th><th>Event Type</th><th>Status</th><th>Detail</th></tr>

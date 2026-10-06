@@ -99,6 +99,174 @@ def test_generate_html_exposes_vqe_geometry_ansatz_comparison() -> None:
     assert "0.7414" in html
     assert "EfficientSU2" in html
 
+
+def test_sync_panel_shows_unmatched_start_as_active_not_healthy() -> None:
+    html = module._build_sync_panel(
+        "shors_monthly_benchmark",
+        "&#128302;",
+        "Shor's Monthly Benchmark",
+        [{
+            "event_time": "2026-10-06T11:00:00Z",
+            "event_type": "run_started",
+            "status": "started",
+            "detail": "Started benchmark",
+        }],
+        {
+            "task_name": "ShorsMonthlyBench",
+            "day": 1,
+            "hour": 8,
+            "minute": 0,
+            "qpu_cap": 300,
+            "run_timeout_seconds": 900,
+        },
+        now_utc="2026-10-06T11:05:00Z",
+    )
+
+    assert "ACTIVE" in html
+    assert "Healthy" not in html
+
+
+@pytest.mark.parametrize(
+    ("policy_id", "expected_seconds"),
+    [
+        ("shors_monthly_benchmark", 900),
+        ("vqe_monthly_benchmark", 7200),
+        ("quantum_cache_fill_monthly", 600),
+    ],
+)
+def test_schedule_policy_loads_configured_run_timeout(
+    policy_id: str,
+    expected_seconds: int,
+) -> None:
+    policy = module._load_schedule_policy(policy_id)
+
+    assert policy["run_timeout_seconds"] == expected_seconds
+
+
+def test_sync_panel_marks_unmatched_start_timed_out_without_claiming_cancellation() -> None:
+    policy = module._load_schedule_policy("shors_monthly_benchmark")
+    html = module._build_sync_panel(
+        "shors_monthly_benchmark",
+        "&#128302;",
+        "Shor's Monthly Benchmark",
+        [{
+            "event_time": "2026-10-01T08:00:00Z",
+            "event_type": "run_started",
+            "status": "started",
+            "detail": '{"attempt_id":"attempt-shor-1","message":"started"}',
+        }],
+        policy,
+        now_utc="2026-10-01T08:15:01Z",
+    )
+
+    assert "TIMED-OUT" in html
+    assert "No terminal report after 900s" in html
+    assert "provider cancellation is not inferred" in html
+
+
+def test_sync_panel_does_not_attach_an_overlapping_attempts_completion() -> None:
+    policy = module._load_schedule_policy("shors_monthly_benchmark")
+    html = module._build_sync_panel(
+        "shors_monthly_benchmark",
+        "&#128302;",
+        "Shor's Monthly Benchmark",
+        [
+            {
+                "event_time": "2026-10-06T11:32:00Z",
+                "event_type": "run_completed",
+                "status": "succeeded",
+                "detail": '{"attempt_id":"attempt-a","message":"old run finished"}',
+            },
+            {
+                "event_time": "2026-10-06T11:30:00Z",
+                "event_type": "run_started",
+                "status": "started",
+                "detail": '{"attempt_id":"attempt-b","message":"new run started"}',
+            },
+            {
+                "event_time": "2026-10-06T10:00:00Z",
+                "event_type": "run_started",
+                "status": "started",
+                "detail": '{"attempt_id":"attempt-a","message":"old run started"}',
+            },
+        ],
+        policy,
+        now_utc="2026-10-06T11:33:00Z",
+    )
+
+    assert "ACTIVE" in html
+    assert "Run status: <strong>ACTIVE</strong>" in html
+    assert "Run status: <strong>SUCCEEDED</strong>" not in html
+
+
+def test_sync_panel_ignores_pre_start_deferred_event_for_active_attempt() -> None:
+    policy = module._load_schedule_policy("vqe_monthly_benchmark")
+    html = module._build_sync_panel(
+        "vqe_monthly_benchmark",
+        "&#9881;",
+        "VQE Monthly Benchmark",
+        [
+            {
+                "event_time": "2026-10-06T11:01:00Z",
+                "event_type": "run_started",
+                "status": "started",
+                "detail": '{"attempt_id":"attempt-1","message":"Aer run started"}',
+            },
+            {
+                "event_time": "2026-10-06T11:00:00Z",
+                "event_type": "run_deferred",
+                "status": "deferred",
+                "detail": '{"attempt_id":"attempt-1","message":"QPU budget unavailable; using Aer"}',
+            },
+        ],
+        policy,
+        now_utc="2026-10-06T11:02:00Z",
+    )
+
+    assert "Run status: <strong>ACTIVE</strong>" in html
+
+
+@pytest.mark.parametrize(
+    ("event_type", "status", "expected_label"),
+    [
+        ("run_completed", "succeeded", "SUCCEEDED"),
+        ("run_completed", "failed", "FAILED"),
+        ("run_deferred", "deferred", "DEFERRED"),
+        ("planner_blocked", "blocked", "BLOCKED"),
+        ("planner_approval_required", "approval_required", "APPROVAL-REQUIRED"),
+        ("run_completed", "skipped", "SKIPPED"),
+    ],
+)
+def test_sync_panel_renders_terminal_attempt_statuses(
+    event_type: str,
+    status: str,
+    expected_label: str,
+) -> None:
+    policy = module._load_schedule_policy("shors_monthly_benchmark")
+    html = module._build_sync_panel(
+        "shors_monthly_benchmark",
+        "&#128302;",
+        "Shor's Monthly Benchmark",
+        [
+            {
+                "event_time": "2026-10-06T11:01:00Z",
+                "event_type": event_type,
+                "status": status,
+                "detail": '{"attempt_id":"attempt-1","message":"terminal"}',
+            },
+            {
+                "event_time": "2026-10-06T11:00:00Z",
+                "event_type": "run_started",
+                "status": "started",
+                "detail": '{"attempt_id":"attempt-1","message":"started"}',
+            },
+        ],
+        policy,
+        now_utc="2026-10-06T11:02:00Z",
+    )
+
+    assert expected_label in html
+
 def test_load_cache_widget_data_sorts_sparkline_points(tmp_path, monkeypatch):
     root = tmp_path / "quantum"
     live_dir = root / "src" / "data" / "liveCache"

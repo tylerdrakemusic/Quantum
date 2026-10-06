@@ -32,10 +32,12 @@ Environment
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -167,10 +169,22 @@ def _ensure_policy_events_table(conn) -> None:
     conn.commit()
 
 
-def _log_policy_event(event_type: str, status: str, detail: str) -> None:
+def _log_policy_event(
+    event_type: str,
+    status: str,
+    detail: str,
+    *,
+    attempt_id: str | None = None,
+) -> None:
     """Persist one policy event for cache-fill observability."""
     import init_db
 
+    if attempt_id is not None:
+        detail = json.dumps(
+            {"attempt_id": attempt_id, "message": detail},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     conn = init_db.get_connection()
     _ensure_policy_events_table(conn)
     event_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -462,7 +476,17 @@ def main() -> None:
         _print_status()
         sys.exit(0)
 
-    _log_policy_event(
+    attempt_id = uuid.uuid4().hex
+
+    def log_attempt_event(event_type: str, status: str, detail: str) -> None:
+        _log_policy_event(
+            event_type=event_type,
+            status=status,
+            detail=detail,
+            attempt_id=attempt_id,
+        )
+
+    log_attempt_event(
         event_type="run_started",
         status="started",
         detail=(
@@ -477,7 +501,7 @@ def main() -> None:
             dry_run=args.dry_run,
         )
         if args.dry_run:
-            _log_policy_event(
+            log_attempt_event(
                 event_type="run_completed",
                 status="skipped",
                 detail=_with_elapsed_duration(
@@ -487,7 +511,7 @@ def main() -> None:
             )
         elif bits > 0:
             _logger.info("Cache fill successful. Run with --status to verify.")
-            _log_policy_event(
+            log_attempt_event(
                 event_type="run_completed",
                 status="succeeded",
                 detail=_with_elapsed_duration(
@@ -496,7 +520,7 @@ def main() -> None:
                 ),
             )
         else:
-            _log_policy_event(
+            log_attempt_event(
                 event_type="run_completed",
                 status="failed",
                 detail=_with_elapsed_duration(
@@ -507,7 +531,7 @@ def main() -> None:
         sys.exit(0)
     except KeyboardInterrupt:
         _logger.info("Interrupted by user — partial results discarded.")
-        _log_policy_event(
+        log_attempt_event(
             event_type="run_completed",
             status="deferred",
             detail=_with_elapsed_duration("Cache fill interrupted by user.", timer_start),
@@ -515,7 +539,7 @@ def main() -> None:
         sys.exit(1)
     except Exception as exc:  # noqa: BLE001
         _logger.error("fill_cache.py failed: %s", exc)
-        _log_policy_event(
+        log_attempt_event(
             event_type="run_completed",
             status="failed",
             detail=_with_elapsed_duration(f"Cache fill failed: {exc}", timer_start),

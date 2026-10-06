@@ -82,9 +82,20 @@ def test_stale_hardware_uses_optional_simulator_fallback() -> None:
         now_utc=NOW,
     )
 
-    assert result.status is PlannerStatus.FALLBACK_RECOMMENDED
+    assert result.status is PlannerStatus.RUNNABLE_SIMULATOR
     assert result.selected_provider_id == "local-aer"
     assert "stale_hardware_snapshot" in result.reason_codes
+
+
+def test_simulator_is_blocked_when_fallback_is_not_allowed() -> None:
+    denied_request = NormalizedRequest.from_dict(
+        {**request().to_dict(), "allow_simulator_fallback": False}
+    )
+    result = plan_execution(denied_request, [snapshot()], now_utc=NOW)
+
+    assert result.status is PlannerStatus.BLOCKED
+    assert result.selected_provider_id is None
+    assert "simulator_fallback_not_allowed" in result.reason_codes
 
 
 def test_hardware_approval_is_required_before_a_hardware_plan() -> None:
@@ -148,6 +159,19 @@ def test_provider_order_does_not_change_serialized_plan() -> None:
     second = plan_execution(request(), list(reversed(snapshots)), now_utc=NOW).to_dict()
 
     assert first == second
+
+
+def test_local_aer_is_preferred_over_other_simulator_fallbacks() -> None:
+    result = plan_execution(
+        request(),
+        [
+            snapshot(provider_id="amazon-braket", provider="braket"),
+            snapshot(),
+        ],
+        now_utc=NOW,
+    )
+
+    assert result.selected_provider_id == "local-aer"
 
 
 def test_static_provider_fixtures_are_credential_free() -> None:
