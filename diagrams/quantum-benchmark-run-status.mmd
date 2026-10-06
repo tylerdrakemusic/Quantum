@@ -23,8 +23,8 @@ stateDiagram-v2
     state "Aer provider outcome<br/>simulation completed" as AerCompleted
     state "Aer provider outcome<br/>simulation error" as AerFailed
     state "Benchmark result<br/>factors found or not found" as Result
-    state "Persist benchmark row<br/>and provenance" as Persist
-    state "Regenerate static dashboard<br/>subprocess timeout 120s" as DashboardBuild
+    state "Persist benchmark result<br/>and provenance" as Persist
+    state "Regenerate static dashboard<br/>reads terminal event<br/>subprocess timeout 120s" as DashboardBuild
     state "run_completed event<br/>succeeded, failed, or skipped" as RunCompleted
     state "run_completed event<br/>failed" as RunFailed
     state "Planner terminal event<br/>deferred, blocked, or approval_required" as PlannerTerminal
@@ -56,9 +56,8 @@ stateDiagram-v2
     IBMCompleted --> Result: evaluate factor result
     AerCompleted --> Result: evaluate factor result
     Result --> Persist: persist benchmark and provenance
-    Persist --> DashboardBuild: database write succeeds
-    DashboardBuild --> RunCompleted: log terminal status after build attempt
-    Persist --> RunFailed: database write fails
+    Persist --> RunCompleted: result and provenance persisted
+    Persist --> RunFailed: benchmark result persistence fails
     IBMFailed --> RunFailed: execution failure
     AerFailed --> RunFailed: execution failure
     Deferred --> PlannerTerminal: planner_deferred
@@ -67,7 +66,8 @@ stateDiagram-v2
     PlannerTerminal --> EventStore: persist terminal event with attempt_id
     RunCompleted --> EventStore: persist with same attempt_id
     RunFailed --> EventStore: persist with same attempt_id
-    EventStore --> DashboardRead: dashboard resolves current lifecycle
+    EventStore --> DashboardBuild: result row persisted, read terminal event
+    DashboardBuild --> DashboardRead: write static dashboard
     DashboardRead --> TerminalStatus: matching terminal event exists
     DashboardRead --> ActiveStatus: no terminal event and under 900s
     DashboardRead --> TimedOutStatus: no terminal event after 900s
@@ -80,6 +80,18 @@ stateDiagram-v2
     note right of EventStore
         Started and terminal events carry the same attempt_id
         inside detail so the dashboard does not mix attempts.
+        Persist the benchmark result and provenance before
+        writing run_completed to policy_events. Static dashboard
+        regeneration follows that terminal write and reads the
+        matching terminal event.
+        Only a persisted benchmark result row triggers static
+        dashboard regeneration. Planner terminal paths log their
+        terminal event and exit without a rebuild.
+        A Shor result-row persistence failure logs a failed
+        terminal event and exits without a rebuild, so it cannot
+        produce a successful dashboard claim.
+        Planner deferred, blocked, and approval_required outcomes
+        are terminal events, not successful benchmark runs.
     end note
     note right of TimedOutStatus
         900s comes from run_timeouts_seconds and is a dashboard
@@ -88,14 +100,12 @@ stateDiagram-v2
         The QPU cap is 300s and is a separate limit.
     end note
 
-classDef tyler   fill:#3a1a52,stroke:#9e4aff,color:#fff
-classDef orch    fill:#1a3a52,stroke:#4a9eff,color:#fff
-classDef ws      fill:#2a4e3a,stroke:#4aff9e,color:#fff
-classDef ext     fill:#4e2a2a,stroke:#ff4a4a,color:#fff
-classDef db      fill:#4e4a2a,stroke:#ffe14a,color:#fff
-classDef state   fill:#1a1a1a,stroke:#888,color:#fff
+classDef quantum fill:#251a3a,stroke:#a07adf,color:#e8d0f8
+classDef ext     fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0
+classDef db      fill:#3a3010,stroke:#d4c050,color:#f8f0c0
+classDef state   fill:#1a1a1a,stroke:#888888,color:#cccccc
 
-class Schedule,Started,Request,HardwareCheck,AerCheck,HardwareReady,AerReady,Deferred,Blocked,Result,Persist,DashboardBuild,RunCompleted,RunFailed,PlannerTerminal,DashboardRead,TerminalStatus,ActiveStatus,TimedOutStatus orch
+class Schedule,Started,Request,HardwareCheck,AerCheck,HardwareReady,AerReady,Deferred,Blocked,Result,Persist,DashboardBuild,RunCompleted,RunFailed,PlannerTerminal,DashboardRead,TerminalStatus,ActiveStatus,TimedOutStatus quantum
 class ScheduleWindow,Snapshots,ApprovalRequired state
 class IBMSubmit,IBMCompleted,IBMFailed,AerRun,AerCompleted,AerFailed ext
 class EventStore db
