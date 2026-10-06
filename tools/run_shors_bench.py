@@ -573,6 +573,10 @@ def run_benchmark(
             conn.close()
     else:
         snapshots = ()
+    snapshots = tuple(
+        snapshot for snapshot in snapshots
+        if snapshot.provider_id in {"ibm-quantum", "local-aer"}
+    )
     planner_result = plan_execution(
         planner_request,
         snapshots,
@@ -960,7 +964,15 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # Regenerate dashboard
+    event_status = "succeeded" if result["success"] else "failed"
+    status_detail = (
+        f"Benchmark completed; success={result['success']}; "
+        f"backend={result['backend']}; qpu_seconds={result['qpu_seconds']:.1f}; "
+        f"factors={result['factor_found'] or 'none'}"
+    )
+    log_attempt_event(event_type="run_completed", status=event_status, detail=status_detail)
+
+    # Regenerate dashboard after the terminal event is persisted so static HTML is current.
     dash_script = _ROOT / "tools" / "gen_benchmark_dashboard.py"
     try:
         # --static is required: without it gen_benchmark_dashboard.py
@@ -975,14 +987,6 @@ def main() -> None:
         _log.info("Dashboard regenerated.")
     except Exception as exc:
         _log.warning("Dashboard regeneration failed: %s", exc)
-
-    event_status = "succeeded" if result["success"] else "failed"
-    status_detail = (
-        f"Benchmark completed; success={result['success']}; "
-        f"backend={result['backend']}; qpu_seconds={result['qpu_seconds']:.1f}; "
-        f"factors={result['factor_found'] or 'none'}"
-    )
-    log_attempt_event(event_type="run_completed", status=event_status, detail=status_detail)
 
     status = "SUCCESS" if result["success"] else "FAILED (no factors)"
     print(f"\n{'='*56}")

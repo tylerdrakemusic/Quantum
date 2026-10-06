@@ -226,11 +226,45 @@ def test_sync_panel_ignores_pre_start_deferred_event_for_active_attempt() -> Non
     assert "Run status: <strong>ACTIVE</strong>" in html
 
 
+def test_sync_panel_uses_latest_terminal_only_attempt_after_completed_run() -> None:
+    policy = module._load_schedule_policy("vqe_monthly_benchmark")
+    html = module._build_sync_panel(
+        "vqe_monthly_benchmark",
+        "&#9881;",
+        "VQE Monthly Benchmark",
+        [
+            {
+                "event_time": "2026-10-06T11:03:00Z",
+                "event_type": "run_deferred",
+                "status": "deferred",
+                "detail": '{"attempt_id":"attempt-2","message":"Operator deferred this run"}',
+            },
+            {
+                "event_time": "2026-10-06T11:02:00Z",
+                "event_type": "run_completed",
+                "status": "succeeded",
+                "detail": '{"attempt_id":"attempt-1","message":"Earlier run completed"}',
+            },
+            {
+                "event_time": "2026-10-06T11:01:00Z",
+                "event_type": "run_started",
+                "status": "started",
+                "detail": '{"attempt_id":"attempt-1","message":"Earlier run started"}',
+            },
+        ],
+        policy,
+        now_utc="2026-10-06T11:04:00Z",
+    )
+
+    assert "Run status: <strong>DEFERRED</strong>" in html
+
+
 @pytest.mark.parametrize(
     ("event_type", "status", "expected_label"),
     [
         ("run_completed", "succeeded", "SUCCEEDED"),
         ("run_completed", "failed", "FAILED"),
+        ("run_completed", "deferred", "DEFERRED"),
         ("run_deferred", "deferred", "DEFERRED"),
         ("planner_blocked", "blocked", "BLOCKED"),
         ("planner_approval_required", "approval_required", "APPROVAL-REQUIRED"),

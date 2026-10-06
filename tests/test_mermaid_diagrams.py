@@ -11,6 +11,7 @@ DIAGRAM_NAMES = (
     "quantum-package-compatibility.mmd",
     "quantum-randomness-service.mmd",
     "quantum-tech-stack.mmd",
+    "quantum-benchmark-run-status.mmd",
 )
 
 EXPECTED_MANIFEST = {
@@ -24,9 +25,10 @@ EXPECTED_MANIFEST = {
                 "diagrams/quantum-derived-cache-integrity.mmd",
                 "diagrams/quantum-randomness-service.mmd",
                 "diagrams/quantum-package-compatibility.mmd",
+                "diagrams/quantum-benchmark-run-status.mmd",
             ],
         },
-        "metrics": {"utf8_characters": 3381, "utf8_bytes": 3404, "nodes": 40, "edges": 27},
+        "metrics": {"utf8_characters": 3424, "utf8_bytes": 3447, "nodes": 40, "edges": 27},
     },
     "diagrams/quantum-db-schema.mmd": {
         "kind": "database-schema",
@@ -64,6 +66,16 @@ EXPECTED_MANIFEST = {
             "derived_views": [],
         },
         "metrics": {"utf8_characters": 1695, "utf8_bytes": 1695, "nodes": 11, "edges": 7},
+    },
+    "diagrams/quantum-benchmark-run-status.mmd": {
+        "kind": "architecture-detail",
+        "category": "detail",
+        "split_required": False,
+        "lineage": {
+            "parent": "diagrams/quantum-architecture.mmd",
+            "derived_views": [],
+        },
+        "metrics": {"utf8_characters": 5965, "utf8_bytes": 5965, "nodes": 36, "edges": 37},
     },
     "diagrams/quantum-tech-stack.mmd": {
         "kind": "technology-stack",
@@ -130,6 +142,11 @@ def test_quantum_mermaid_sources_preserve_traceability() -> None:
     assert (
         "%% Traceability.parent: diagrams/quantum-architecture.mmd"
         in diagrams["quantum-derived-cache-integrity.mmd"]
+    )
+    assert "%% is_derived_view=true" in diagrams["quantum-benchmark-run-status.mmd"]
+    assert (
+        "%% Traceability.parent: diagrams/quantum-architecture.mmd"
+        in diagrams["quantum-benchmark-run-status.mmd"]
     )
 
 

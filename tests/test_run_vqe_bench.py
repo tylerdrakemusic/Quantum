@@ -126,7 +126,7 @@ def test_main_reports_partial_job_failure_as_failed_attempt(
     monkeypatch.setattr(rvb, "resolve_backend_choice", lambda *args, **kwargs: ("aer", None))
     monkeypatch.setattr(
         rvb, "run_all_molecules",
-        lambda *args, **kwargs: ([{"molecule": "h2", "ac_met": True}], True),
+        lambda *args, **kwargs: ([{"molecule": "h2", "ac_met": True}], True, False),
     )
     monkeypatch.setattr(rvb, "log_policy_event", lambda **kwargs: events.append(kwargs))
 
@@ -136,6 +136,91 @@ def test_main_reports_partial_job_failure_as_failed_attempt(
     assert exc_info.value.code == 1
     terminal = next(event for event in events if event["event_type"] == "run_completed")
     assert terminal["status"] == "failed"
+
+
+def test_main_reports_wall_clock_deferral_instead_of_partial_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = type(
+        "Args",
+        (),
+        {
+            "defer_reason": "",
+            "manual_override_note": "",
+            "backend": "aer",
+            "max_qpu_seconds": rvb.MAX_QPU_SECONDS,
+            "dry_run": False,
+            "molecule": "all",
+            "ansatz": "UCCSD",
+            "seed": 17,
+            "no_dashboard": True,
+        },
+    )()
+    events: list[dict[str, str]] = []
+    monkeypatch.setitem(sys.modules, "init_db", MagicMock(get_connection=MagicMock(return_value=MagicMock())))
+    monkeypatch.setattr(rvb, "_parse_args", lambda: args)
+    monkeypatch.setattr(rvb, "_ensure_policy_events_table", lambda conn: None)
+    monkeypatch.setattr(rvb, "resolve_backend_choice", lambda *args, **kwargs: ("aer", None))
+    monkeypatch.setattr(
+        rvb,
+        "run_all_molecules",
+        lambda *args, **kwargs: ([{"molecule": "h2", "ac_met": True}], False, True),
+    )
+    monkeypatch.setattr(rvb, "log_policy_event", lambda **kwargs: events.append(kwargs))
+
+    with pytest.raises(SystemExit) as exc_info:
+        rvb.main()
+
+    assert exc_info.value.code != 0
+    terminal = next(event for event in events if event["event_type"] == "run_completed")
+    assert terminal["status"] == "deferred"
+
+
+def test_main_persists_terminal_event_before_dashboard_regeneration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = type(
+        "Args",
+        (),
+        {
+            "defer_reason": "",
+            "manual_override_note": "",
+            "backend": "aer",
+            "max_qpu_seconds": rvb.MAX_QPU_SECONDS,
+            "dry_run": False,
+            "molecule": "h2",
+            "ansatz": "UCCSD",
+            "seed": 17,
+            "no_dashboard": False,
+        },
+    )()
+    events: list[dict[str, str]] = []
+    status_at_regen: list[str | None] = []
+    monkeypatch.setitem(sys.modules, "init_db", MagicMock(get_connection=MagicMock(return_value=MagicMock())))
+    monkeypatch.setattr(rvb, "_parse_args", lambda: args)
+    monkeypatch.setattr(rvb, "_ensure_policy_events_table", lambda conn: None)
+    monkeypatch.setattr(rvb, "resolve_backend_choice", lambda *args, **kwargs: ("aer", None))
+    monkeypatch.setattr(
+        rvb,
+        "run_all_molecules",
+        lambda *args, **kwargs: ([{"molecule": "h2", "ac_met": True}], False, False),
+    )
+    monkeypatch.setattr(rvb, "log_policy_event", lambda **kwargs: events.append(kwargs))
+
+    def fake_regenerate(*_args, **_kwargs) -> None:
+        terminal = next(
+            (event for event in events if event["event_type"] == "run_completed"),
+            None,
+        )
+        status_at_regen.append(terminal["status"] if terminal else None)
+
+    monkeypatch.setattr(rvb.subprocess, "run", MagicMock(side_effect=fake_regenerate))
+
+    with pytest.raises(SystemExit) as exc_info:
+        rvb.main()
+
+    assert exc_info.value.code == 0
+    assert status_at_regen == ["succeeded"]
 
 
 def test_shared_qpu_budget_is_loaded_from_execution_policy() -> None:
@@ -167,13 +252,46 @@ def test_wall_clock_guard_aborts_remaining_molecules(monkeypatch: pytest.MonkeyP
     times = iter([0.0, 0.0, 100.0, 100.0])
     monkeypatch.setattr(rvb.time, "monotonic", lambda: next(times))
 
-    results, any_job_failed = rvb.run_all_molecules(
+    results, any_job_failed, deferred = rvb.run_all_molecules(
         ["h2", "lih"], backend_label="aer_statevector", max_qpu_seconds=50,
     )
 
     assert calls == ["h2"]
     assert any(status == "deferred" for _, status, _ in events)
     assert any_job_failed is False
+    assert deferred is True
+
+
+def test_wall_clock_cap_at_loop_entry_defers_all_molecules(
+    monkeypatch: pytest.MonkeyPatch, quantum_db_env,
+) -> None:
+    calls: list[str] = []
+    events: list[dict[str, str]] = []
+    monkeypatch.setattr(
+        rvb,
+        "_bench_vqe_run_vqe",
+        lambda molecule, **kwargs: calls.append(molecule),
+    )
+    monkeypatch.setattr(rvb, "log_policy_event", lambda **kwargs: events.append(kwargs))
+    times = iter([0.0, 50.0])
+    monkeypatch.setattr(rvb.time, "monotonic", lambda: next(times, 50.0))
+
+    results, any_job_failed, deferred = rvb.run_all_molecules(
+        ["h2", "lih"],
+        backend_label="aer_statevector",
+        max_qpu_seconds=50,
+        attempt_id="attempt-cap-at-entry",
+    )
+
+    assert calls == []
+    assert results == []
+    assert any_job_failed is False
+    assert deferred is True
+    assert len(events) == 1
+    assert events[0]["event_type"] == "run_deferred"
+    assert events[0]["status"] == "deferred"
+    assert events[0]["attempt_id"] == "attempt-cap-at-entry"
+    assert "aborting remaining molecules: h2, lih" in events[0]["detail"]
 
 
 def test_budget_check_falls_back_to_aer_when_shared_budget_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -226,7 +344,7 @@ def test_run_all_molecules_qpu_builds_estimator_and_passes_through(
     monkeypatch.setattr(rvb, "_bench_vqe_run_vqe", fake_run_vqe)
     monkeypatch.setattr(rvb, "log_policy_event", lambda **_kwargs: None)
 
-    results, any_job_failed = rvb.run_all_molecules(
+    results, any_job_failed, deferred = rvb.run_all_molecules(
         ["h2"], backend_label="ibm_qpu_estimator_v2", max_qpu_seconds=600,
     )
 
@@ -235,6 +353,7 @@ def test_run_all_molecules_qpu_builds_estimator_and_passes_through(
     assert received[0]["estimator"] is fake_estimator
     assert received[0]["qpu_backend"] is fake_backend
     assert any_job_failed is False
+    assert deferred is False
 
 
 def test_run_all_molecules_forwards_ansatz_and_seed(monkeypatch, quantum_db_env) -> None:
@@ -254,7 +373,7 @@ def test_run_all_molecules_forwards_ansatz_and_seed(monkeypatch, quantum_db_env)
     monkeypatch.setattr(rvb, "_bench_vqe_run_vqe", fake_run_vqe)
     monkeypatch.setattr(rvb, "log_policy_event", lambda **_kwargs: None)
 
-    results, any_job_failed = rvb.run_all_molecules(
+    results, any_job_failed, deferred = rvb.run_all_molecules(
         ["h2"], backend_label="aer_statevector", max_qpu_seconds=600,
         ansatz_name="EfficientSU2", seed=17,
     )
@@ -263,6 +382,7 @@ def test_run_all_molecules_forwards_ansatz_and_seed(monkeypatch, quantum_db_env)
     assert received[0]["ansatz_name"] == "EfficientSU2"
     assert received[0]["seed"] == 17
     assert any_job_failed is False
+    assert deferred is False
 
 
 def test_run_all_molecules_wired_through_retry_supervisor_records_status(
@@ -282,12 +402,13 @@ def test_run_all_molecules_wired_through_retry_supervisor_records_status(
     monkeypatch.setattr(rvb, "_bench_vqe_run_vqe", fake_run_vqe)
     monkeypatch.setattr(rvb, "log_policy_event", lambda **_kwargs: None)
 
-    results, any_job_failed = rvb.run_all_molecules(
+    results, any_job_failed, deferred = rvb.run_all_molecules(
         ["h2", "lih"], backend_label="aer_statevector", max_qpu_seconds=600,
     )
 
     assert len(results) == 2
     assert any_job_failed is False
+    assert deferred is False
 
     conn = init_db.get_connection()
     rows = conn.execute(
@@ -325,11 +446,16 @@ def test_run_all_molecules_permanent_job_failure_keeps_partial_success(
     import job_retry_supervisor
     monkeypatch.setattr(job_retry_supervisor.time, "sleep", lambda *_a, **_kw: None)
 
-    results, any_job_failed = rvb.run_all_molecules(
+    results, any_job_failed, deferred = rvb.run_all_molecules(
         ["h2", "lih"], backend_label="aer_statevector", max_qpu_seconds=600,
     )
 
     assert any_job_failed is True
+    assert deferred is False
     assert len(results) == 1
     assert results[0]["molecule"] == "lih"
-    assert any("vqe-h2" in detail and status == "failed" for _, status, detail in events)
+    assert any(
+        event_type == "molecule_failed" and "vqe-h2" in detail and status == "failed"
+        for event_type, status, detail in events
+    )
+    assert not any(event_type == "run_completed" for event_type, _, _ in events)

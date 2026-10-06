@@ -196,6 +196,43 @@ def test_shors_runs_aer_for_eligible_fallback_without_reading_hardware_credentia
     fake_simulator.run.assert_called_once_with(circuit, shots=rsb.N_SHOTS)
 
 
+def test_shors_blocks_braket_only_snapshot_before_aer_execution(
+    monkeypatch: pytest.MonkeyPatch, quantum_db_env,
+) -> None:
+    _fake_circuit(monkeypatch)
+    braket_snapshot = AvailabilitySnapshot.from_dict({
+        "provider_id": "amazon-braket",
+        "provider": "braket",
+        "execution_mode": "simulator",
+        "available": True,
+        "observed_at": "2026-09-01T07:59:59Z",
+        "freshness_seconds": 3600,
+        "max_qubits": 32,
+        "quota_remaining_seconds": 0,
+    })
+    monkeypatch.setattr(rsb, "_load_backend_snapshots", lambda *args: (braket_snapshot,))
+    fake_simulator = MagicMock()
+    fake_simulator.run.return_value.result.return_value.get_counts.return_value = {
+        "1111": rsb.N_SHOTS,
+    }
+    monkeypatch.setitem(
+        sys.modules,
+        "qiskit_aer",
+        MagicMock(AerSimulator=MagicMock(return_value=fake_simulator)),
+    )
+    monkeypatch.setitem(sys.modules, "qiskit", MagicMock(transpile=MagicMock(return_value=object())))
+
+    result = rsb.run_benchmark(
+        dry_run=False,
+        approved=False,
+        now_utc="2026-09-01T08:00:00Z",
+    )
+
+    assert result["planner_status"] == "blocked"
+    assert result["planner_result"]["selected_provider_id"] is None
+    assert result["backend"] == "planner"
+
+
 def test_outside_monthly_window_defers_before_credentials(
     monkeypatch: pytest.MonkeyPatch, quantum_db_env,
 ) -> None:
@@ -482,20 +519,31 @@ def test_main_dashboard_regen_uses_static_mode_with_timeout(monkeypatch: pytest.
         n=15, max_qpu_seconds=rsb.MAX_QPU_SECONDS, dry_run=False,
         defer_reason="", manual_override_note="", approved=False, now_utc="",
     ))
-    monkeypatch.setattr(rsb, "log_policy_event", MagicMock())
+    events: list[dict[str, str]] = []
+    monkeypatch.setattr(rsb, "log_policy_event", lambda **kwargs: events.append(kwargs))
     monkeypatch.setattr(rsb, "run_benchmark", lambda **kwargs: fake_result)
     monkeypatch.setattr(rsb, "persist_result", lambda result: 1)
     monkeypatch.setattr(rsb, "print_db_row", MagicMock())
 
-    fake_run = MagicMock()
-    monkeypatch.setattr(rsb.subprocess, "run", fake_run)
+    terminal_status_at_regen: list[str | None] = []
+
+    def fake_run(*_args, **_kwargs) -> None:
+        terminal = next(
+            (event for event in events if event["event_type"] == "run_completed"),
+            None,
+        )
+        terminal_status_at_regen.append(terminal["status"] if terminal else None)
+
+    fake_run_spy = MagicMock(side_effect=fake_run)
+    monkeypatch.setattr(rsb.subprocess, "run", fake_run_spy)
 
     with pytest.raises(SystemExit):
         rsb.main()
 
-    fake_run.assert_called_once()
-    call_args = fake_run.call_args
+    fake_run_spy.assert_called_once()
+    call_args = fake_run_spy.call_args
     cmd_args = call_args.args[0]
+    assert terminal_status_at_regen == ["failed"]
     assert "--static" in cmd_args
     assert "--no-open" in cmd_args
     assert call_args.kwargs.get("timeout") == 120

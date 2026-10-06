@@ -770,15 +770,37 @@ def _build_sync_panel(
             "timed-out": "timed-out",
         }.get(status)
 
-    start_index = next(
-        (index for index, event in enumerate(events) if event.get("event_type") == "run_started"),
+    start_indices = [
+        index for index, event in enumerate(events)
+        if event.get("event_type") == "run_started"
+    ]
+    started_attempt_ids = {
+        attempt_id(events[index]) for index in start_indices if attempt_id(events[index])
+    }
+    latest_start_index = start_indices[0] if start_indices else None
+    terminal_only = next(
+        (
+            (index, event) for index, event in enumerate(events)
+            if terminal_status(event) is not None
+            and attempt_id(event)
+            and attempt_id(event) not in started_attempt_ids
+        ),
         None,
     )
+    if terminal_only is not None and (
+        latest_start_index is None or terminal_only[0] < latest_start_index
+    ):
+        start_index = None
+        terminal_without_start = terminal_only[1]
+    else:
+        start_index = latest_start_index
+        terminal_without_start = None
     if start_index is None:
-        run_status = terminal_status(latest) if latest else None
+        status_event = terminal_without_start or latest
+        run_status = terminal_status(status_event) if status_event else None
         run_status = run_status or "unknown"
         started_at = None
-        status_detail = str(latest.get("detail") or "") if latest else ""
+        status_detail = str(status_event.get("detail") or "") if status_event else ""
     else:
         started = events[start_index]
         current_attempt_id = attempt_id(started)
