@@ -54,5 +54,10 @@
     "PolicyComplianceAudit_Daily": 30,
     "QuantumBackendAvailabilityMonitor_Daily": 30
   },
+  "run_timeouts_seconds": {
+    "shors_monthly_benchmark": 900,
+    "vqe_monthly_benchmark": 7200,
+    "quantum_cache_fill_monthly": 600
+  },
   "shared_qpu_budget_seconds": 600
 }

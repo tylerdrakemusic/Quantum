@@ -11,6 +11,7 @@ DIAGRAM_NAMES = (
     "quantum-package-compatibility.mmd",
     "quantum-randomness-service.mmd",
     "quantum-tech-stack.mmd",
+    "quantum-benchmark-run-status.mmd",
 )
 
 EXPECTED_MANIFEST = {
@@ -24,9 +25,10 @@ EXPECTED_MANIFEST = {
                 "diagrams/quantum-derived-cache-integrity.mmd",
                 "diagrams/quantum-randomness-service.mmd",
                 "diagrams/quantum-package-compatibility.mmd",
+                "diagrams/quantum-benchmark-run-status.mmd",
             ],
         },
-        "metrics": {"utf8_characters": 3381, "utf8_bytes": 3404, "nodes": 40, "edges": 27},
+        "metrics": {"utf8_characters": 3424, "utf8_bytes": 3447, "nodes": 40, "edges": 27},
     },
     "diagrams/quantum-db-schema.mmd": {
         "kind": "database-schema",
@@ -64,6 +66,16 @@ EXPECTED_MANIFEST = {
             "derived_views": [],
         },
         "metrics": {"utf8_characters": 1695, "utf8_bytes": 1695, "nodes": 11, "edges": 7},
+    },
+    "diagrams/quantum-benchmark-run-status.mmd": {
+        "kind": "architecture-detail",
+        "category": "detail",
+        "split_required": False,
+        "lineage": {
+            "parent": "diagrams/quantum-architecture.mmd",
+            "derived_views": [],
+        },
+        "metrics": {"utf8_characters": 6614, "utf8_bytes": 6614, "nodes": 36, "edges": 37},
     },
     "diagrams/quantum-tech-stack.mmd": {
         "kind": "technology-stack",
@@ -131,6 +143,11 @@ def test_quantum_mermaid_sources_preserve_traceability() -> None:
         "%% Traceability.parent: diagrams/quantum-architecture.mmd"
         in diagrams["quantum-derived-cache-integrity.mmd"]
     )
+    assert "%% is_derived_view=true" in diagrams["quantum-benchmark-run-status.mmd"]
+    assert (
+        "%% Traceability.parent: diagrams/quantum-architecture.mmd"
+        in diagrams["quantum-benchmark-run-status.mmd"]
+    )
 
 
 def test_quantum_manifest_enumerates_sources_and_cache_integrity_lineage() -> None:
@@ -152,6 +169,30 @@ def test_quantum_manifest_enumerates_sources_and_cache_integrity_lineage() -> No
         <= record.keys()
         for record in records.values()
     )
+
+
+def test_quantum_benchmark_terminal_event_precedes_static_dashboard_regeneration() -> None:
+    source = (DIAGRAMS_DIR / "quantum-benchmark-run-status.mmd").read_text(encoding="utf-8")
+
+    assert "Persist --> RunCompleted: result and provenance persisted" in source
+    assert "RunCompleted --> EventStore: persist with same attempt_id" in source
+    assert "EventStore --> DashboardBuild: result row persisted, read terminal event" in source
+    assert "DashboardBuild --> DashboardRead: write static dashboard" in source
+    assert "Persist --> RunFailed: benchmark result persistence fails" in source
+    assert "RunFailed --> EventStore: persist with same attempt_id" in source
+    assert "Persist --> DashboardBuild" not in source
+    assert "DashboardBuild --> RunCompleted" not in source
+    assert "RunFailed --> DashboardBuild" not in source
+    assert "classDef quantum fill:#251a3a,stroke:#a07adf,color:#e8d0f8" in source
+    assert "classDef ext     fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0" in source
+    assert "classDef db      fill:#3a3010,stroke:#d4c050,color:#f8f0c0" in source
+    assert "classDef state   fill:#1a1a1a,stroke:#888888,color:#cccccc" in source
+    assert "TimedOutStatus quantum" in source
+    assert "A Shor result-row persistence failure logs a failed" in source
+    assert "PlannerTerminal --> EventStore: persist terminal event with attempt_id" in source
+    assert "Deferred --> PlannerTerminal: planner_deferred" in source
+    assert "ApprovalRequired --> PlannerTerminal: planner_approval_required" in source
+    assert "Blocked --> PlannerTerminal: planner_blocked" in source
 
 
 def test_quantum_manifest_split_metadata_matches_measured_budget_contract() -> None:

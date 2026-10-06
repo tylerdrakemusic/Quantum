@@ -147,6 +147,9 @@ def test_main_starts_one_elapsed_timer_and_records_success_duration(monkeypatch)
     assert completed["event_type"] == "run_completed"
     assert completed["status"] == "succeeded"
     assert "elapsed_seconds=2.500" in completed["detail"]
+    started = next(event for event in events if event["event_type"] == "run_started")
+    assert started["attempt_id"]
+    assert started["attempt_id"] == completed["attempt_id"]
     assert len(monotonic_calls) == 2
 
 

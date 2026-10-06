@@ -1,0 +1,111 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a2e3a', 'primaryTextColor': '#d0ecf8', 'edgeLabelBackground': '#0f1318', 'lineColor': '#4a7a9a'}}}%%
+%% is_derived_view=true
+%% Traceability.parent: diagrams/quantum-architecture.mmd
+%% Scope: Shor monthly benchmark planning, attempt events, provider outcomes, and dashboard status
+stateDiagram-v2
+    direction LR
+    state "ShorsMonthlyBench<br/>day 1 at 08:00 UTC" as Schedule
+    state "run_started<br/>new attempt_id" as Started
+    state "Schedule window<br/>plus or minus 15 minutes" as ScheduleWindow
+    state "Normalized request<br/>schema 1.0, QPU estimate 300s" as Request
+    state "Provider snapshots<br/>freshness, qubits, quota" as Snapshots
+    state "Eligible hardware plan?" as HardwareCheck
+    state "approval_required<br/>explicit --approved gate" as ApprovalRequired
+    state "Runnable hardware plan" as HardwareReady
+    state "Fallback allowed<br/>and local Aer eligible?" as AerCheck
+    state "Runnable local Aer plan" as AerReady
+    state "Planner deferred" as Deferred
+    state "Planner blocked" as Blocked
+    state "IBM Runtime submission" as IBMSubmit
+    state "IBM provider outcome<br/>job completed" as IBMCompleted
+    state "IBM provider outcome<br/>job error" as IBMFailed
+    state "Local Aer execution" as AerRun
+    state "Aer provider outcome<br/>simulation completed" as AerCompleted
+    state "Aer provider outcome<br/>simulation error" as AerFailed
+    state "Benchmark result<br/>factors found or not found" as Result
+    state "Persist benchmark result<br/>and provenance" as Persist
+    state "Regenerate static dashboard<br/>reads terminal event<br/>subprocess timeout 120s" as DashboardBuild
+    state "run_completed event<br/>succeeded, failed, or skipped" as RunCompleted
+    state "run_completed event<br/>failed" as RunFailed
+    state "Planner terminal event<br/>deferred, blocked, or approval_required" as PlannerTerminal
+    state "policy_events<br/>attempt_id in event detail" as EventStore
+    state "Dashboard reads recent events<br/>and matches attempt_id" as DashboardRead
+    state "Dashboard terminal status<br/>succeeded, failed, deferred,<br/>blocked, approval-required, skipped" as TerminalStatus
+    state "Dashboard active<br/>no terminal event yet" as ActiveStatus
+    state "Dashboard timed-out<br/>no matching terminal event" as TimedOutStatus
+
+    [*] --> Schedule
+    Schedule --> Started: task launches runner
+    Started --> EventStore: persist run_started
+    EventStore --> ScheduleWindow: runner continues
+    ScheduleWindow --> Deferred: outside run window
+    ScheduleWindow --> Request: within run window
+    Request --> Snapshots: planner evaluates normalized inputs
+    Snapshots --> HardwareCheck: check fresh capability and quota
+    HardwareCheck --> ApprovalRequired: hardware fits, approval absent
+    HardwareCheck --> HardwareReady: hardware fits and approved
+    HardwareCheck --> AerCheck: no eligible hardware plan
+    AerCheck --> AerReady: fallback allowed and Aer snapshot eligible
+    AerCheck --> Blocked: fallback disallowed or no provider fits
+    HardwareReady --> IBMSubmit: hardware execution path
+    IBMSubmit --> IBMCompleted: IBM job returns result
+    IBMSubmit --> IBMFailed: IBM runtime or job failure
+    AerReady --> AerRun: simulator execution path
+    AerRun --> AerCompleted: Aer returns result
+    AerRun --> AerFailed: simulator failure
+    IBMCompleted --> Result: evaluate factor result
+    AerCompleted --> Result: evaluate factor result
+    Result --> Persist: persist benchmark and provenance
+    Persist --> RunCompleted: result and provenance persisted
+    Persist --> RunFailed: benchmark result persistence fails
+    IBMFailed --> RunFailed: execution failure
+    AerFailed --> RunFailed: execution failure
+    Deferred --> PlannerTerminal: planner_deferred
+    ApprovalRequired --> PlannerTerminal: planner_approval_required
+    Blocked --> PlannerTerminal: planner_blocked
+    PlannerTerminal --> EventStore: persist terminal event with attempt_id
+    RunCompleted --> EventStore: persist with same attempt_id
+    RunFailed --> EventStore: persist with same attempt_id
+    EventStore --> DashboardBuild: result row persisted, read terminal event
+    DashboardBuild --> DashboardRead: write static dashboard
+    DashboardRead --> TerminalStatus: matching terminal event exists
+    DashboardRead --> ActiveStatus: no terminal event and under 900s
+    DashboardRead --> TimedOutStatus: no terminal event after 900s
+
+    note right of HardwareCheck
+        Local Aer is eligible only when fallback is allowed
+        and its availability snapshot fits the request.
+        This runner's hardware execution path submits to IBM Runtime.
+    end note
+    note right of EventStore
+        Started and terminal events carry the same attempt_id
+        inside detail so the dashboard does not mix attempts.
+        Persist the benchmark result and provenance before
+        writing run_completed to policy_events. Static dashboard
+        regeneration follows that terminal write and reads the
+        matching terminal event.
+        Only a persisted benchmark result row triggers static
+        dashboard regeneration. Planner terminal paths log their
+        terminal event and exit without a rebuild.
+        A Shor result-row persistence failure logs a failed
+        terminal event and exits without a rebuild, so it cannot
+        produce a successful dashboard claim.
+        Planner deferred, blocked, and approval_required outcomes
+        are terminal events, not successful benchmark runs.
+    end note
+    note right of TimedOutStatus
+        900s comes from run_timeouts_seconds and is a dashboard
+        observation threshold, not provider job cancellation.
+        No remote provider outcome is inferred from this status.
+        The QPU cap is 300s and is a separate limit.
+    end note
+
+classDef quantum fill:#251a3a,stroke:#a07adf,color:#e8d0f8
+classDef ext     fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0
+classDef db      fill:#3a3010,stroke:#d4c050,color:#f8f0c0
+classDef state   fill:#1a1a1a,stroke:#888888,color:#cccccc
+
+class Schedule,Started,Request,HardwareCheck,AerCheck,HardwareReady,AerReady,Deferred,Blocked,Result,Persist,DashboardBuild,RunCompleted,RunFailed,PlannerTerminal,DashboardRead,TerminalStatus,ActiveStatus,TimedOutStatus quantum
+class ScheduleWindow,Snapshots,ApprovalRequired state
+class IBMSubmit,IBMCompleted,IBMFailed,AerRun,AerCompleted,AerFailed ext
+class EventStore db

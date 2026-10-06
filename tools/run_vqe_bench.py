@@ -24,11 +24,13 @@ Environment
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -93,10 +95,18 @@ def _record_policy_event(
     conn.commit()
 
 
-def log_policy_event(*, event_type: str, status: str, detail: str) -> None:
+def log_policy_event(
+    *, event_type: str, status: str, detail: str, attempt_id: str | None = None,
+) -> None:
     """Persist one benchmark policy event for UI observability."""
     import init_db
 
+    if attempt_id is not None:
+        detail = json.dumps(
+            {"attempt_id": attempt_id, "message": detail},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     next_run_at = execution_policy.next_run_iso(POLICY_ID)
     conn = init_db.get_connection()
     _ensure_policy_events_table(conn)
@@ -238,7 +248,8 @@ def resolve_backend_choice(
 def run_all_molecules(
     molecules: list[str], backend_label: str, max_qpu_seconds: int,
     ansatz_name: str = "UCCSD", seed: int = 20260906,
-) -> tuple[list[dict], bool]:
+    attempt_id: str | None = None,
+) -> tuple[list[dict], bool, bool]:
     """Run each molecule via bench_vqe.run_vqe(), aborting if the hard wall-clock
     cap would be exceeded before starting the next molecule.
 
@@ -247,7 +258,7 @@ def run_all_molecules(
     On a permanent per-molecule failure, the job_id + error are logged and
     that molecule is skipped — partial successes already collected are kept.
 
-    Returns (results, any_job_failed).
+    Returns (results, any_job_failed, deferred).
     """
     import init_db
     from job_retry_supervisor import Job, JobStatus, RetrySupervisor
@@ -255,6 +266,13 @@ def run_all_molecules(
     results: list[dict] = []
     wall_start = time.monotonic()
     any_job_failed = False
+    deferred = False
+
+    def log_attempt_event(*, event_type: str, status: str, detail: str) -> None:
+        event = {"event_type": event_type, "status": status, "detail": detail}
+        if attempt_id is not None:
+            event["attempt_id"] = attempt_id
+        log_policy_event(**event)
 
     estimator = None
     qpu_backend = None
@@ -274,7 +292,8 @@ def run_all_molecules(
                 f"aborting remaining molecules: {', '.join(remaining)}"
             )
             _log.warning(detail)
-            log_policy_event(event_type="run_deferred", status="deferred", detail=detail)
+            log_attempt_event(event_type="run_deferred", status="deferred", detail=detail)
+            deferred = True
             break
 
         job_id = f"vqe-{molecule}"
@@ -305,7 +324,7 @@ def run_all_molecules(
             error_msg = row["error_msg"] if row is not None else "unknown error"
             detail = f"VQE job {job_id} failed permanently: {error_msg}"
             _log.error(detail)
-            log_policy_event(event_type="run_completed", status="failed", detail=detail)
+            log_attempt_event(event_type="molecule_failed", status="failed", detail=detail)
 
         elapsed_after = time.monotonic() - wall_start
         if elapsed_after >= max_qpu_seconds and i + 1 < len(molecules):
@@ -316,12 +335,13 @@ def run_all_molecules(
                 f"{', '.join(remaining)}"
             )
             _log.warning(detail)
-            log_policy_event(event_type="run_deferred", status="deferred", detail=detail)
+            log_attempt_event(event_type="run_deferred", status="deferred", detail=detail)
+            deferred = True
             break
 
     conn.close()
 
-    return results, any_job_failed
+    return results, any_job_failed, deferred
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -357,16 +377,17 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    attempt_id = uuid.uuid4().hex
 
     if args.defer_reason.strip():
         detail = f"Deferred benchmark run: {args.defer_reason.strip()}"
-        log_policy_event(event_type="run_deferred", status="deferred", detail=detail)
+        log_policy_event(event_type="run_deferred", status="deferred", detail=detail, attempt_id=attempt_id)
         _log.info(detail)
         sys.exit(0)
 
     if args.manual_override_note.strip():
         detail = f"Manual override noted: {args.manual_override_note.strip()}"
-        log_policy_event(event_type="manual_override", status="manual_override", detail=detail)
+        log_policy_event(event_type="manual_override", status="manual_override", detail=detail, attempt_id=attempt_id)
 
     import init_db
     conn = init_db.get_connection()
@@ -377,7 +398,7 @@ def main() -> None:
     conn.close()
     if deferred_detail:
         _log.warning(deferred_detail)
-        log_policy_event(event_type="run_deferred", status="deferred", detail=deferred_detail)
+        log_policy_event(event_type="run_deferred", status="deferred", detail=deferred_detail, attempt_id=attempt_id)
 
     backend_label = "aer_statevector" if backend_choice == "aer" else "ibm_qpu_estimator_v2"
 
@@ -385,40 +406,54 @@ def main() -> None:
         f"Started benchmark; schedule={execution_policy.schedule_label(POLICY_ID)}; "
         f"backend={backend_label}; qpu_cap={args.max_qpu_seconds}s"
     )
-    log_policy_event(event_type="run_started", status="started", detail=started_detail)
+    log_policy_event(event_type="run_started", status="started", detail=started_detail, attempt_id=attempt_id)
 
     if args.dry_run:
         _log.info("DRY RUN — no VQE optimization executed, no DB write, no dashboard update.")
         log_policy_event(
             event_type="run_completed", status="skipped",
             detail="Dry-run executed; no VQE run and no persistence.",
+            attempt_id=attempt_id,
         )
         sys.exit(0)
 
     molecules = ["h2", "lih"] if args.molecule == "all" else [args.molecule]
 
     try:
-        results, any_job_failed = run_all_molecules(
+        results, any_job_failed, deferred = run_all_molecules(
             molecules, backend_label=backend_label, max_qpu_seconds=args.max_qpu_seconds,
-            ansatz_name=args.ansatz, seed=args.seed,
+            ansatz_name=args.ansatz, seed=args.seed, attempt_id=attempt_id,
         )
     except Exception as exc:
         _log.error("Benchmark run failed: %s", exc)
         log_policy_event(
             event_type="run_completed", status="failed",
             detail=f"Benchmark execution failed: {exc}",
+            attempt_id=attempt_id,
         )
         sys.exit(1)
 
     if not results:
         log_policy_event(
-            event_type="run_completed", status="failed",
+            event_type="run_completed", status="deferred" if deferred else "failed",
             detail="No molecules completed before the wall-clock cap was reached.",
+            attempt_id=attempt_id,
         )
         sys.exit(1)
 
     all_met = all(r["ac_met"] for r in results)
     ran = ", ".join(r["molecule"] for r in results)
+
+    status = "deferred" if deferred else (
+        "succeeded" if all_met and not any_job_failed else "failed"
+    )
+    status_detail = (
+        f"Benchmark completed; molecules={ran}; backend={backend_label}; "
+        f"all_ac_met={all_met}; job_failed={any_job_failed}; deferred={deferred}"
+    )
+    log_policy_event(
+        event_type="run_completed", status=status, detail=status_detail, attempt_id=attempt_id,
+    )
 
     if not args.no_dashboard:
         dash_script = _ROOT / "tools" / "gen_benchmark_dashboard.py"
@@ -434,15 +469,13 @@ def main() -> None:
         except Exception as exc:
             _log.warning("Dashboard regeneration failed: %s", exc)
 
-    status = "succeeded" if all_met else "failed"
-    status_detail = (
-        f"Benchmark completed; molecules={ran}; backend={backend_label}; "
-        f"all_ac_met={all_met}"
-    )
-    log_policy_event(event_type="run_completed", status=status, detail=status_detail)
-
     print(f"\n{'='*56}")
-    print(f"  VQE benchmark complete: {'SUCCESS' if all_met else 'ACCURACY TARGET MISSED'}")
+    completion_label = {
+        "succeeded": "SUCCESS",
+        "deferred": "DEFERRED",
+        "failed": "FAILED",
+    }[status]
+    print(f"  VQE benchmark complete: {completion_label}")
     print(f"  Molecules run: {ran}")
     print(f"  Backend: {backend_label}")
     print(f"{'='*56}\n")
@@ -452,7 +485,7 @@ def main() -> None:
     # successes already persisted/dashboarded above are never discarded.
     if any_job_failed:
         sys.exit(1)
-    sys.exit(0 if all_met else 1)
+    sys.exit(0 if all_met and not deferred else 1)
 
 
 if __name__ == "__main__":

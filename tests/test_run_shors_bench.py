@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -94,6 +95,24 @@ def test_planner_blocks_before_credentials_when_hardware_snapshot_is_missing(
     assert "no_provider_fit" in result["planner_result"]["reason_codes"]
 
 
+def test_backend_snapshots_include_local_aer_when_package_is_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = MagicMock()
+    connection.execute.return_value.fetchall.return_value = []
+    aer_module = MagicMock(AerSimulator=MagicMock())
+    monkeypatch.setitem(sys.modules, "qiskit_aer", aer_module)
+
+    snapshots = rsb._load_backend_snapshots(
+        connection,
+        datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc),
+        300,
+    )
+
+    assert [snapshot.provider_id for snapshot in snapshots] == ["local-aer"]
+    assert snapshots[0].available is True
+
+
 def test_planner_requires_explicit_approval_for_hardware(
     monkeypatch: pytest.MonkeyPatch, quantum_db_env,
 ) -> None:
@@ -113,15 +132,28 @@ def test_planner_requires_explicit_approval_for_hardware(
     assert result["planner_result"]["selected_provider_id"] == "ibm-quantum"
 
 
-def test_stale_hardware_recommends_fallback_and_does_not_run_simulator(
+def test_stale_hardware_runs_eligible_simulator_fallback(
     monkeypatch: pytest.MonkeyPatch, quantum_db_env,
 ) -> None:
-    _fake_circuit(monkeypatch)
+    circuit = _fake_circuit(monkeypatch)
     monkeypatch.setattr(
         rsb, "_load_backend_snapshots",
         lambda *args: (_hardware_snapshot(observed_at="2026-08-01T08:00:00Z"), _simulator_snapshot()),
     )
-    monkeypatch.setattr(rsb, "_get_ibm_credentials", lambda: pytest.fail("stale hardware must defer"))
+    monkeypatch.setattr(
+        rsb, "_get_ibm_credentials", lambda: pytest.fail("Aer fallback must not read IBM credentials"),
+    )
+
+    fake_simulator = MagicMock()
+    fake_simulator.run.return_value.result.return_value.get_counts.return_value = {
+        "1111": rsb.N_SHOTS,
+    }
+    monkeypatch.setitem(
+        sys.modules,
+        "qiskit_aer",
+        MagicMock(AerSimulator=MagicMock(return_value=fake_simulator)),
+    )
+    monkeypatch.setitem(sys.modules, "qiskit", MagicMock(transpile=MagicMock(return_value=circuit)))
 
     result = rsb.run_benchmark(
         dry_run=False,
@@ -129,9 +161,76 @@ def test_stale_hardware_recommends_fallback_and_does_not_run_simulator(
         now_utc="2026-09-01T08:00:00Z",
     )
 
-    assert result["planner_status"] == "fallback_recommended"
-    assert result["deferred"] is True
-    assert result["planner_result"]["selected_provider_id"] == "local-aer"
+    assert result["planner_status"] == "runnable_simulator"
+    assert result["backend"] == "local-aer"
+    fake_simulator.run.assert_called_once_with(circuit, shots=rsb.N_SHOTS)
+
+
+def test_shors_runs_aer_for_eligible_fallback_without_reading_hardware_credentials(
+    monkeypatch: pytest.MonkeyPatch, quantum_db_env,
+) -> None:
+    circuit = _fake_circuit(monkeypatch)
+    monkeypatch.setattr(rsb, "_load_backend_snapshots", lambda *args: (_simulator_snapshot(),))
+    monkeypatch.setattr(
+        rsb, "_get_ibm_credentials", lambda: pytest.fail("Aer fallback must not read IBM credentials"),
+    )
+
+    fake_simulator = MagicMock()
+    fake_simulator.run.return_value.result.return_value.get_counts.return_value = {
+        "1111": rsb.N_SHOTS,
+    }
+    aer_module = MagicMock(AerSimulator=MagicMock(return_value=fake_simulator))
+    qiskit_module = MagicMock(transpile=MagicMock(return_value=circuit))
+    monkeypatch.setitem(sys.modules, "qiskit_aer", aer_module)
+    monkeypatch.setitem(sys.modules, "qiskit", qiskit_module)
+
+    result = rsb.run_benchmark(
+        dry_run=False,
+        approved=False,
+        now_utc="2026-09-01T08:00:00Z",
+    )
+
+    assert result["planner_status"] == "runnable_simulator"
+    assert result["backend"] == "local-aer"
+    assert result["qpu_seconds"] == 0.0
+    fake_simulator.run.assert_called_once_with(circuit, shots=rsb.N_SHOTS)
+
+
+def test_shors_blocks_braket_only_snapshot_before_aer_execution(
+    monkeypatch: pytest.MonkeyPatch, quantum_db_env,
+) -> None:
+    _fake_circuit(monkeypatch)
+    braket_snapshot = AvailabilitySnapshot.from_dict({
+        "provider_id": "amazon-braket",
+        "provider": "braket",
+        "execution_mode": "simulator",
+        "available": True,
+        "observed_at": "2026-09-01T07:59:59Z",
+        "freshness_seconds": 3600,
+        "max_qubits": 32,
+        "quota_remaining_seconds": 0,
+    })
+    monkeypatch.setattr(rsb, "_load_backend_snapshots", lambda *args: (braket_snapshot,))
+    fake_simulator = MagicMock()
+    fake_simulator.run.return_value.result.return_value.get_counts.return_value = {
+        "1111": rsb.N_SHOTS,
+    }
+    monkeypatch.setitem(
+        sys.modules,
+        "qiskit_aer",
+        MagicMock(AerSimulator=MagicMock(return_value=fake_simulator)),
+    )
+    monkeypatch.setitem(sys.modules, "qiskit", MagicMock(transpile=MagicMock(return_value=object())))
+
+    result = rsb.run_benchmark(
+        dry_run=False,
+        approved=False,
+        now_utc="2026-09-01T08:00:00Z",
+    )
+
+    assert result["planner_status"] == "blocked"
+    assert result["planner_result"]["selected_provider_id"] is None
+    assert result["backend"] == "planner"
 
 
 def test_outside_monthly_window_defers_before_credentials(
@@ -154,7 +253,10 @@ def test_outside_monthly_window_defers_before_credentials(
     assert "outside_schedule_window" in result["planner_result"]["reason_codes"]
 
 
-def test_load_backend_snapshots_reads_latest_persisted_health_rows(quantum_db_env) -> None:
+def test_load_backend_snapshots_reads_latest_persisted_health_rows(
+    quantum_db_env, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "qiskit_aer", MagicMock(AerSimulator=MagicMock()))
     conn = init_db.get_connection()
     conn.execute(
         "INSERT INTO backend_health (provider, status, checked_at) VALUES (?, ?, ?)",
@@ -171,7 +273,9 @@ def test_load_backend_snapshots_reads_latest_persisted_health_rows(quantum_db_en
     )
     conn.close()
 
-    assert [snapshot.provider_id for snapshot in snapshots] == ["amazon-braket", "ibm-quantum"]
+    assert [snapshot.provider_id for snapshot in snapshots] == [
+        "amazon-braket", "ibm-quantum", "local-aer",
+    ]
     assert snapshots[1].execution_mode == "hardware"
     assert snapshots[1].available is True
 
@@ -214,6 +318,33 @@ def test_main_records_planner_payload_and_exit_code(
     assert planner_event["status"] in {"deferred", "blocked", "approval_required"}
     assert '"planner_request"' in planner_event["detail"]
     assert '"planner_result"' in planner_event["detail"]
+
+
+def test_main_correlates_started_and_terminal_events_with_attempt_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = argparse.Namespace(
+        n=15,
+        max_qpu_seconds=rsb.MAX_QPU_SECONDS,
+        dry_run=True,
+        defer_reason="",
+        manual_override_note="",
+        approved=False,
+        now_utc="2026-09-01T08:00:00Z",
+    )
+    events: list[dict[str, str]] = []
+    monkeypatch.setattr(rsb, "_parse_args", lambda: args)
+    monkeypatch.setattr(rsb, "run_benchmark", lambda **kwargs: {"planner_status": "runnable_hardware_plan"})
+    monkeypatch.setattr(rsb, "log_policy_event", lambda **kwargs: events.append(kwargs))
+
+    with pytest.raises(SystemExit) as exc_info:
+        rsb.main()
+
+    assert exc_info.value.code == 0
+    started = next(event for event in events if event["event_type"] == "run_started")
+    terminal = next(event for event in events if event["event_type"] == "run_completed")
+    assert started["attempt_id"]
+    assert started["attempt_id"] == terminal["attempt_id"]
 
 
 def test_run_shors_bench_uses_result_get_counts(monkeypatch: pytest.MonkeyPatch, quantum_db_env) -> None:
@@ -388,20 +519,31 @@ def test_main_dashboard_regen_uses_static_mode_with_timeout(monkeypatch: pytest.
         n=15, max_qpu_seconds=rsb.MAX_QPU_SECONDS, dry_run=False,
         defer_reason="", manual_override_note="", approved=False, now_utc="",
     ))
-    monkeypatch.setattr(rsb, "log_policy_event", MagicMock())
+    events: list[dict[str, str]] = []
+    monkeypatch.setattr(rsb, "log_policy_event", lambda **kwargs: events.append(kwargs))
     monkeypatch.setattr(rsb, "run_benchmark", lambda **kwargs: fake_result)
     monkeypatch.setattr(rsb, "persist_result", lambda result: 1)
     monkeypatch.setattr(rsb, "print_db_row", MagicMock())
 
-    fake_run = MagicMock()
-    monkeypatch.setattr(rsb.subprocess, "run", fake_run)
+    terminal_status_at_regen: list[str | None] = []
+
+    def fake_run(*_args, **_kwargs) -> None:
+        terminal = next(
+            (event for event in events if event["event_type"] == "run_completed"),
+            None,
+        )
+        terminal_status_at_regen.append(terminal["status"] if terminal else None)
+
+    fake_run_spy = MagicMock(side_effect=fake_run)
+    monkeypatch.setattr(rsb.subprocess, "run", fake_run_spy)
 
     with pytest.raises(SystemExit):
         rsb.main()
 
-    fake_run.assert_called_once()
-    call_args = fake_run.call_args
+    fake_run_spy.assert_called_once()
+    call_args = fake_run_spy.call_args
     cmd_args = call_args.args[0]
+    assert terminal_status_at_regen == ["failed"]
     assert "--static" in cmd_args
     assert "--no-open" in cmd_args
     assert call_args.kwargs.get("timeout") == 120
