@@ -207,7 +207,9 @@ def test_machine_environments_split_api_auth_and_verified_cache_configuration(tm
     }
 
     worker_store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
-    manifest = worker_store.publish(["0101"], generated_at="2026-09-08T00:00:00Z")
+    manifest = worker_store.publish(
+        ["0101"], generated_at=datetime.now(timezone.utc).isoformat()
+    )
     app = create_app(api_environment(environment))
     app.config["QUANTUM_MANIFEST_URL"] = ""
 
@@ -522,7 +524,7 @@ def test_fresh_verified_generation_is_consumed_sequentially(tmp_path):
     store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
     store.publish(
         ["00000001", "00000010"],
-        generated_at="2026-09-08T00:00:00Z",
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
 
     first, first_provenance = random_bytes(1, store)
@@ -539,7 +541,7 @@ def test_fresh_verified_generation_coordinates_consumption_across_store_instance
     publisher = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
     publisher.publish(
         ["00000001", "00000010"],
-        generated_at="2026-09-08T00:00:00Z",
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
     first_worker = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
     second_worker = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
@@ -558,7 +560,9 @@ def test_fresh_verified_generation_coordinates_consumption_across_store_instance
 
 def test_exhausted_fresh_generation_reports_unavailable_csprng_provenance(tmp_path, monkeypatch):
     store = VerifiedCacheStore(tmp_path, signing_key=b"signing-key")
-    store.publish(["00000001"], generated_at="2026-09-08T00:00:00Z")
+    store.publish(
+        ["00000001"], generated_at=datetime.now(timezone.utc).isoformat()
+    )
     monkeypatch.setattr(
         "quantum_randomness_service.provider.secrets.token_bytes",
         lambda length: b"\xA5" * length,
