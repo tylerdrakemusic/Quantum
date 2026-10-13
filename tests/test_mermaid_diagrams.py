@@ -75,7 +75,7 @@ EXPECTED_MANIFEST = {
             "parent": "diagrams/quantum-architecture.mmd",
             "derived_views": [],
         },
-        "metrics": {"utf8_characters": 6614, "utf8_bytes": 6614, "nodes": 36, "edges": 37},
+        "metrics": {"utf8_characters": 7364, "utf8_bytes": 7364, "nodes": 41, "edges": 43},
     },
     "diagrams/quantum-tech-stack.mmd": {
         "kind": "technology-stack",
@@ -187,12 +187,24 @@ def test_quantum_benchmark_terminal_event_precedes_static_dashboard_regeneration
     assert "classDef ext     fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0" in source
     assert "classDef db      fill:#3a3010,stroke:#d4c050,color:#f8f0c0" in source
     assert "classDef state   fill:#1a1a1a,stroke:#888888,color:#cccccc" in source
-    assert "TimedOutStatus quantum" in source
+    assert "TimedOutStatus,VQEReconcile,VQEDisplay quantum" in source
     assert "A Shor result-row persistence failure logs a failed" in source
     assert "PlannerTerminal --> EventStore: persist terminal event with attempt_id" in source
     assert "Deferred --> PlannerTerminal: planner_deferred" in source
     assert "ApprovalRequired --> PlannerTerminal: planner_approval_required" in source
     assert "Blocked --> PlannerTerminal: planner_blocked" in source
+    assert "%% Scope: Shor and VQE benchmark attempts, terminal evidence, reconciliation, and dashboard status" in source
+    assert "[*] --> VQEReconcile: VQE invocation starts" in source
+    assert "state \"VQE sync panel<br/>per-attempt status rows\" as VQEDisplay" in source
+    assert "VQEReconcile --> TerminalMissing: over configured 7200s without terminal event" in source
+    assert "TerminalMissing --> EventStore: idempotent upsert by attempt_id, status=unknown" in source
+    assert "EventStore --> Started: marker persisted before next run_started" in source
+    assert "VQEReconcile --> Started: recent, terminal, or marker exists" in source
+    assert "DashboardRead --> VQEDisplay: show each attempt's status" in source
+    assert "Dashboard's 900s observation timeout is separate from VQE's" in source
+    assert "configured 7200s prior-attempt reconciliation." in source
+    assert "Per-attempt unknown reports missing evidence, without cause attribution." in source
+    assert "It does not imply provider cancellation;" in source
 
 
 def test_quantum_manifest_split_metadata_matches_measured_budget_contract() -> None:

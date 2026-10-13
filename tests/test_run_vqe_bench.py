@@ -1,7 +1,9 @@
 """Tests for tools/run_vqe_bench.py (BFX-20260630-quantum-vqe-monthly-degraded)."""
 from __future__ import annotations
 
+import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -99,6 +101,73 @@ def test_main_correlates_started_and_terminal_events_with_attempt_id(
     terminal = next(event for event in events if event["event_type"] == "run_completed")
     assert started["attempt_id"]
     assert started["attempt_id"] == terminal["attempt_id"]
+
+
+def test_main_marks_expired_prior_attempt_once_before_new_start(
+    monkeypatch: pytest.MonkeyPatch,
+    quantum_db_env: Path,
+) -> None:
+    args = type(
+        "Args",
+        (),
+        {
+            "defer_reason": "",
+            "manual_override_note": "",
+            "backend": "aer",
+            "max_qpu_seconds": rvb.MAX_QPU_SECONDS,
+            "dry_run": True,
+        },
+    )()
+    monkeypatch.setattr(rvb, "_parse_args", lambda: args)
+    monkeypatch.setattr(rvb, "resolve_backend_choice", lambda *args, **kwargs: ("aer", None))
+
+    timeout_seconds = execution_policy.load_policy_config()["run_timeouts_seconds"][rvb.POLICY_ID]
+    prior_attempt_id = "expired-vqe-attempt"
+    prior_started_at = (
+        datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds + 60)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = init_db.get_connection()
+    rvb._ensure_policy_events_table(conn)
+    conn.execute(
+        """INSERT INTO policy_events
+               (event_time, policy_id, event_type, status, source, detail, next_run_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            prior_started_at,
+            rvb.POLICY_ID,
+            "run_started",
+            "started",
+            "test",
+            json.dumps({"attempt_id": prior_attempt_id, "message": "started"}),
+            execution_policy.next_run_iso(rvb.POLICY_ID),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    for _ in range(2):
+        with pytest.raises(SystemExit) as exc_info:
+            rvb.main()
+        assert exc_info.value.code == 0
+
+    conn = init_db.get_connection()
+    rows = conn.execute(
+        "SELECT id, event_type, status, detail FROM policy_events "
+        "WHERE policy_id = ? ORDER BY id",
+        (rvb.POLICY_ID,),
+    ).fetchall()
+    conn.close()
+
+    markers = [row for row in rows if row["event_type"] == "terminal_missing"]
+    assert len(markers) == 1
+    assert markers[0]["status"] == "unknown"
+    assert json.loads(markers[0]["detail"])["attempt_id"] == prior_attempt_id
+    current_starts = [
+        row for row in rows
+        if row["event_type"] == "run_started"
+        and json.loads(row["detail"]).get("attempt_id") != prior_attempt_id
+    ]
+    assert markers[0]["id"] < current_starts[0]["id"]
 
 
 def test_main_reports_partial_job_failure_as_failed_attempt(

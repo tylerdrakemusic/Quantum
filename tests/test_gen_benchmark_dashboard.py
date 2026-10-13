@@ -199,6 +199,44 @@ def test_sync_panel_does_not_attach_an_overlapping_attempts_completion() -> None
     assert "Run status: <strong>SUCCEEDED</strong>" not in html
 
 
+def test_vqe_sync_panel_shows_older_unknown_attempt_without_changing_latest_status() -> None:
+    policy = module._load_schedule_policy("vqe_monthly_benchmark")
+    html = module._build_sync_panel(
+        "vqe_monthly_benchmark",
+        "&#9889;",
+        "VQE Monthly Benchmark",
+        [
+            {
+                "event_time": "2026-10-13T12:00:00Z",
+                "event_type": "run_started",
+                "status": "started",
+                "detail": '{"attempt_id":"newer-attempt","message":"started"}',
+            },
+            {
+                "event_time": "2026-10-13T11:59:00Z",
+                "event_type": "terminal_missing",
+                "status": "unknown",
+                "detail": '{"attempt_id":"older-attempt","message":"No terminal report after 7200s."}',
+            },
+            {
+                "event_time": "2026-10-13T10:00:00Z",
+                "event_type": "run_started",
+                "status": "started",
+                "detail": '{"attempt_id":"older-attempt","message":"started"}',
+            },
+        ],
+        policy,
+        now_utc="2026-10-13T12:01:00Z",
+    )
+
+    assert "Run status: <strong>ACTIVE</strong>" in html
+    marker_row = next(row for row in html.splitlines() if "terminal_missing" in row)
+    assert "<td>older-attempt</td>" in marker_row
+    assert "UNKNOWN" in marker_row
+    assert "cancelled by provider" not in html.lower()
+    assert "canceled by provider" not in html.lower()
+
+
 def test_sync_panel_ignores_pre_start_deferred_event_for_active_attempt() -> None:
     policy = module._load_schedule_policy("vqe_monthly_benchmark")
     html = module._build_sync_panel(
