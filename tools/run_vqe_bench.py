@@ -84,7 +84,7 @@ def _ensure_policy_events_table(conn) -> None:
 
 def _record_policy_event(
     conn, *, policy_id: str, event_type: str, status: str,
-    source: str, detail: str, next_run_at: str,
+    source: str, detail: str, next_run_at: str, commit: bool = True,
 ) -> None:
     event_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn.execute(
@@ -93,7 +93,8 @@ def _record_policy_event(
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (event_time, policy_id, event_type, status, source, detail, next_run_at),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def log_policy_event(
@@ -130,6 +131,8 @@ def _mark_expired_attempts(conn: Any) -> None:
     )
     if timeout_seconds <= 0:
         return
+
+    conn.execute("BEGIN IMMEDIATE")
 
     def attempt_id_from_detail(detail: str | None) -> str | None:
         try:
@@ -209,7 +212,9 @@ def _mark_expired_attempts(conn: Any) -> None:
             source="tools/run_vqe_bench.py",
             detail=detail,
             next_run_at=execution_policy.next_run_iso(POLICY_ID),
+            commit=False,
         )
+    conn.commit()
 
 
 # IBM Quantum helpers (mirrors tools/run_shors_bench.py's inline pattern)

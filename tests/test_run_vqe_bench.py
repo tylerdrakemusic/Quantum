@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -168,6 +171,71 @@ def test_main_marks_expired_prior_attempt_once_before_new_start(
         and json.loads(row["detail"]).get("attempt_id") != prior_attempt_id
     ]
     assert markers[0]["id"] < current_starts[0]["id"]
+
+
+def test_concurrent_expired_attempt_scans_persist_one_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    quantum_db_env: Path,
+) -> None:
+    timeout_seconds = execution_policy.load_policy_config()["run_timeouts_seconds"][rvb.POLICY_ID]
+    prior_attempt_id = "concurrent-expired-vqe-attempt"
+    prior_started_at = (
+        datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds + 60)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = init_db.get_connection()
+    rvb._ensure_policy_events_table(conn)
+    conn.execute(
+        """INSERT INTO policy_events
+               (event_time, policy_id, event_type, status, source, detail, next_run_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            prior_started_at,
+            rvb.POLICY_ID,
+            "run_started",
+            "started",
+            "test",
+            json.dumps({"attempt_id": prior_attempt_id, "message": "started"}),
+            execution_policy.next_run_iso(rvb.POLICY_ID),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    marker_write_barrier = threading.Barrier(2, timeout=1)
+    record_policy_event = rvb._record_policy_event
+
+    def synchronized_marker_write(conn: Any, **kwargs: Any) -> None:
+        try:
+            marker_write_barrier.wait()
+        except threading.BrokenBarrierError:
+            pass
+        record_policy_event(conn, **kwargs)
+
+    monkeypatch.setattr(rvb, "_record_policy_event", synchronized_marker_write)
+
+    def mark_expired_attempts() -> None:
+        worker_conn = init_db.get_connection()
+        try:
+            rvb._mark_expired_attempts(worker_conn)
+        finally:
+            worker_conn.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(mark_expired_attempts) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=10)
+
+    conn = init_db.get_connection()
+    markers = conn.execute(
+        "SELECT status, detail FROM policy_events "
+        "WHERE policy_id = ? AND event_type = 'terminal_missing'",
+        (rvb.POLICY_ID,),
+    ).fetchall()
+    conn.close()
+
+    assert len(markers) == 1
+    assert markers[0]["status"] == "unknown"
+    assert json.loads(markers[0]["detail"])["attempt_id"] == prior_attempt_id
 
 
 def test_main_reports_partial_job_failure_as_failed_attempt(
