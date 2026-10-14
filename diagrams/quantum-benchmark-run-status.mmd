@@ -1,7 +1,7 @@
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a2e3a', 'primaryTextColor': '#d0ecf8', 'edgeLabelBackground': '#0f1318', 'lineColor': '#4a7a9a'}}}%%
 %% is_derived_view=true
 %% Traceability.parent: diagrams/quantum-architecture.mmd
-%% Scope: Shor monthly benchmark planning, attempt events, provider outcomes, and dashboard status
+%% Scope: Shor and VQE benchmark attempts, terminal evidence, reconciliation, and dashboard status
 stateDiagram-v2
     direction LR
     state "ShorsMonthlyBench<br/>day 1 at 08:00 UTC" as Schedule
@@ -33,8 +33,12 @@ stateDiagram-v2
     state "Dashboard terminal status<br/>succeeded, failed, deferred,<br/>blocked, approval-required, skipped" as TerminalStatus
     state "Dashboard active<br/>no terminal event yet" as ActiveStatus
     state "Dashboard timed-out<br/>no matching terminal event" as TimedOutStatus
+    state "VQE prior-attempt reconciliation<br/>configured timeout: 7200s" as VQEReconcile
+    state "terminal_missing<br/>status=unknown<br/>idempotent by attempt_id" as TerminalMissing
+    state "VQE sync panel<br/>per-attempt status rows" as VQEDisplay
 
     [*] --> Schedule
+    [*] --> VQEReconcile: VQE invocation starts
     Schedule --> Started: task launches runner
     Started --> EventStore: persist run_started
     EventStore --> ScheduleWindow: runner continues
@@ -71,6 +75,11 @@ stateDiagram-v2
     DashboardRead --> TerminalStatus: matching terminal event exists
     DashboardRead --> ActiveStatus: no terminal event and under 900s
     DashboardRead --> TimedOutStatus: no terminal event after 900s
+    VQEReconcile --> TerminalMissing: over configured 7200s without terminal event
+    TerminalMissing --> EventStore: idempotent upsert by attempt_id, status=unknown
+    EventStore --> Started: marker persisted before next run_started
+    VQEReconcile --> Started: recent, terminal, or marker exists
+    DashboardRead --> VQEDisplay: show each attempt's status
 
     note right of HardwareCheck
         Local Aer is eligible only when fallback is allowed
@@ -94,10 +103,10 @@ stateDiagram-v2
         are terminal events, not successful benchmark runs.
     end note
     note right of TimedOutStatus
-        900s comes from run_timeouts_seconds and is a dashboard
-        observation threshold, not provider job cancellation.
-        No remote provider outcome is inferred from this status.
-        The QPU cap is 300s and is a separate limit.
+        Dashboard's 900s observation timeout is separate from VQE's
+        configured 7200s prior-attempt reconciliation.
+        Per-attempt unknown reports missing evidence, without cause attribution.
+        It does not imply provider cancellation; QPU cap 300s is separate.
     end note
 
 classDef quantum fill:#251a3a,stroke:#a07adf,color:#e8d0f8
@@ -105,7 +114,7 @@ classDef ext     fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0
 classDef db      fill:#3a3010,stroke:#d4c050,color:#f8f0c0
 classDef state   fill:#1a1a1a,stroke:#888888,color:#cccccc
 
-class Schedule,Started,Request,HardwareCheck,AerCheck,HardwareReady,AerReady,Deferred,Blocked,Result,Persist,DashboardBuild,RunCompleted,RunFailed,PlannerTerminal,DashboardRead,TerminalStatus,ActiveStatus,TimedOutStatus quantum
-class ScheduleWindow,Snapshots,ApprovalRequired state
+class Schedule,Started,Request,HardwareCheck,AerCheck,HardwareReady,AerReady,Deferred,Blocked,Result,Persist,DashboardBuild,RunCompleted,RunFailed,PlannerTerminal,DashboardRead,TerminalStatus,ActiveStatus,TimedOutStatus,VQEReconcile,VQEDisplay quantum
+class ScheduleWindow,Snapshots,ApprovalRequired,TerminalMissing state
 class IBMSubmit,IBMCompleted,IBMFailed,AerRun,AerCompleted,AerFailed ext
 class EventStore db

@@ -750,6 +750,8 @@ def _build_sync_panel(
     def terminal_status(event: dict) -> str | None:
         event_type = str(event.get("event_type") or "").lower()
         status = str(event.get("status") or "").lower()
+        if event_type == "terminal_missing" and status == "unknown":
+            return "unknown"
         if event_type == "planner_blocked":
             return "blocked"
         if event_type == "planner_approval_required":
@@ -852,18 +854,25 @@ def _build_sync_panel(
     task_name = _esc(schedule_policy.get("task_name", policy_id))
     qpu_cap = schedule_policy.get("qpu_cap", 300)
 
+    show_attempt_ids = policy_id == "vqe_monthly_benchmark"
+    attempt_header = "<th>Attempt ID</th>" if show_attempt_ids else ""
+    empty_colspan = 5 if show_attempt_ids else 4
     rows_html = ""
     for event in events[:6]:
+        attempt_cell = (
+            f"<td>{_esc(attempt_id(event) or '')}</td>" if show_attempt_ids else ""
+        )
         rows_html += (
             "<tr>"
             f"<td>{_esc(event['event_time'])}</td>"
             f"<td>{_esc(event['event_type'])}</td>"
             f"<td>{_policy_badge(event['status'])}</td>"
+            f"{attempt_cell}"
             f"<td class='notes'>{_esc(event['detail'])}</td>"
             "</tr>"
         )
     if not rows_html:
-        rows_html = "<tr class='sync-empty-row'><td colspan='4'>No events yet.</td></tr>"
+        rows_html = f"<tr class='sync-empty-row'><td colspan='{empty_colspan}'>No events yet.</td></tr>"
 
     return f"""<div class="sync-category">
   <div class="sync-category-header" onclick="this.parentElement.classList.toggle('collapsed')">
@@ -884,7 +893,7 @@ def _build_sync_panel(
         <p class="sync-run-note">{_esc(status_detail)}</p>
     <table class="sync-table">
       <thead>
-        <tr><th>Event Time</th><th>Event Type</th><th>Status</th><th>Detail</th></tr>
+            <tr><th>Event Time</th><th>Event Type</th><th>Status</th>{attempt_header}<th>Detail</th></tr>
       </thead>
       <tbody>{rows_html}</tbody>
     </table>

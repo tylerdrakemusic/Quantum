@@ -33,6 +33,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent   # f:\⟨ψ⟩Quantum\
@@ -83,7 +84,7 @@ def _ensure_policy_events_table(conn) -> None:
 
 def _record_policy_event(
     conn, *, policy_id: str, event_type: str, status: str,
-    source: str, detail: str, next_run_at: str,
+    source: str, detail: str, next_run_at: str, commit: bool = True,
 ) -> None:
     event_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn.execute(
@@ -92,7 +93,8 @@ def _record_policy_event(
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (event_time, policy_id, event_type, status, source, detail, next_run_at),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def log_policy_event(
@@ -120,6 +122,99 @@ def log_policy_event(
         next_run_at=next_run_at,
     )
     conn.close()
+
+
+def _mark_expired_attempts(conn: Any) -> None:
+    """Record one unknown terminal marker for each expired attempt without terminal evidence."""
+    timeout_seconds = int(
+        execution_policy.load_policy_config().get("run_timeouts_seconds", {}).get(POLICY_ID, 0)
+    )
+    if timeout_seconds <= 0:
+        return
+
+    conn.execute("BEGIN IMMEDIATE")
+
+    def attempt_id_from_detail(detail: str | None) -> str | None:
+        try:
+            payload = json.loads(detail or "")
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        attempt_id = payload.get("attempt_id")
+        return attempt_id if isinstance(attempt_id, str) and attempt_id else None
+
+    def parse_event_time(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    rows = conn.execute(
+        """SELECT event_time, event_type, status, detail FROM policy_events
+           WHERE policy_id = ? ORDER BY event_time, id""",
+        (POLICY_ID,),
+    ).fetchall()
+    started_at: dict[str, datetime] = {}
+    terminal_attempt_ids: set[str] = set()
+    marked_attempt_ids: set[str] = set()
+    terminal_statuses = {
+        "succeeded", "failed", "deferred", "blocked", "approval_required",
+        "approval-required", "skipped", "timed_out", "timed-out",
+    }
+
+    for row in rows:
+        attempt_id = attempt_id_from_detail(row["detail"])
+        if attempt_id is None:
+            continue
+        event_type = str(row["event_type"] or "").lower()
+        status = str(row["status"] or "").lower()
+        if event_type == "run_started":
+            event_time = parse_event_time(row["event_time"])
+            if event_time is not None and (
+                attempt_id not in started_at or event_time < started_at[attempt_id]
+            ):
+                started_at[attempt_id] = event_time
+        elif event_type == "terminal_missing":
+            marked_attempt_ids.add(attempt_id)
+            terminal_attempt_ids.add(attempt_id)
+        elif (
+            event_type == "run_completed" and status in terminal_statuses
+        ) or event_type in (
+            "run_deferred", "planner_deferred", "planner_blocked", "planner_approval_required",
+        ):
+            terminal_attempt_ids.add(attempt_id)
+
+    now_utc = datetime.now(timezone.utc)
+    for attempt_id, event_time in started_at.items():
+        if attempt_id in terminal_attempt_ids or attempt_id in marked_attempt_ids:
+            continue
+        if (now_utc - event_time).total_seconds() < timeout_seconds:
+            continue
+        detail = json.dumps(
+            {
+                "attempt_id": attempt_id,
+                "message": f"No terminal report was recorded within the configured {timeout_seconds}-second timeout.",
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        _record_policy_event(
+            conn,
+            policy_id=POLICY_ID,
+            event_type="terminal_missing",
+            status="unknown",
+            source="tools/run_vqe_bench.py",
+            detail=detail,
+            next_run_at=execution_policy.next_run_iso(POLICY_ID),
+            commit=False,
+        )
+    conn.commit()
 
 
 # IBM Quantum helpers (mirrors tools/run_shors_bench.py's inline pattern)
@@ -392,6 +487,7 @@ def main() -> None:
     import init_db
     conn = init_db.get_connection()
     _ensure_policy_events_table(conn)
+    _mark_expired_attempts(conn)
     backend_choice, deferred_detail = resolve_backend_choice(
         args.backend, conn, required_seconds=args.max_qpu_seconds,
     )
