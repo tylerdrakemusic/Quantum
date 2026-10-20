@@ -28,7 +28,7 @@ EXPECTED_MANIFEST = {
                 "diagrams/quantum-benchmark-run-status.mmd",
             ],
         },
-        "metrics": {"utf8_characters": 3504, "utf8_bytes": 3534, "nodes": 40, "edges": 27},
+        "metrics": {"utf8_characters": 3583, "utf8_bytes": 3610, "nodes": 40, "edges": 27},
     },
     "diagrams/quantum-db-schema.mmd": {
         "kind": "database-schema",
@@ -214,9 +214,11 @@ def test_quantum_scheduler_and_scheduled_shor_approval_paths_are_documented() ->
     cache = (DIAGRAMS_DIR / "quantum-derived-cache-integrity.mmd").read_text(encoding="utf-8")
     status = (DIAGRAMS_DIR / "quantum-benchmark-run-status.mmd").read_text(encoding="utf-8")
 
+    assert "PackageCompat[Derived package compatibility view" in architecture
+    assert 'PackageCompat -.->|"see derived view"| ControlPlane' in architecture
     assert "execution_policy.json → sync_scheduled_tasks.py" in architecture
     assert "Windows Task Scheduler" in architecture
-    assert "TaskSync -.->|routes Shor and VQE into the control plane| ControlPlane" in architecture
+    assert "Scheduled tasks for cache, Shor, VQE, and provider health are generated" in architecture
     assert "TaskPolicy -.-> TaskSync -.-> TaskScheduler -.-> CacheFillTask -.-> FillCache" in cache
     assert 'state "approval_required<br/>manual --approved absent<br/>or scheduled policy denies" as ApprovalRequired' in status
     assert "Scheduled Shor approval requires --scheduled and the exact policy ID allowlist" in status
