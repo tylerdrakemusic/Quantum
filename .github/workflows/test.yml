@@ -103,6 +103,26 @@ jobs:
           test "$count" -eq "$expected_count"
           test "$selected" = "$expected"
 
+      - name: Configure bundled OpenMP runtime preload
+        shell: bash
+        run: |
+          site_packages="$(python -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')"
+          openmp_libs=()
+          for library in \
+            "$site_packages"/scikit_learn.libs/libgomp-*.so* \
+            "$site_packages"/qiskit_aer.libs/libgomp-*.so*; do
+            if [[ -f "$library" ]]; then
+              openmp_libs+=("$library")
+            fi
+          done
+          if ((${#openmp_libs[@]})); then
+            preload="$(IFS=:; printf '%s' "${openmp_libs[*]}")"
+            if [[ -n "${LD_PRELOAD:-}" ]]; then
+              preload="${LD_PRELOAD}:$preload"
+            fi
+            printf 'LD_PRELOAD=%s\n' "$preload" >> "$GITHUB_ENV"
+          fi
+
       - name: Run pytest
         env:
           PLAYWRIGHT_ENABLED: "0"  # Set to "1" locally to run Playwright tests (FR-20260513-playwright-ui-gate)
