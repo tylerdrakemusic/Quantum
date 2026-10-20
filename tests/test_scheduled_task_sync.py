@@ -85,6 +85,7 @@ def test_task_scheduler_xml_file_declaration_matches_utf16_encoding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(sync_scheduled_tasks, "_is_windows", lambda: True)
     _, xml_text = build_task_definition(
         task_name="ShorsMonthlyBench",
         schedule={"day_of_month": 1, "hour": 8, "minute": 0},
@@ -120,7 +121,7 @@ def test_task_scheduler_xml_file_declaration_matches_utf16_encoding(
 def test_register_task_refuses_to_replace_an_unmanaged_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(sync_scheduled_tasks.os, "name", "nt")
+    monkeypatch.setattr(sync_scheduled_tasks, "_is_windows", lambda: True)
     calls: list[list[str]] = []
 
     def run(command: list[str], **_kwargs) -> sync_scheduled_tasks.subprocess.CompletedProcess:

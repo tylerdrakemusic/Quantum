@@ -28,6 +28,10 @@ def _tag(name: str) -> str:
     return f"{{{_NAMESPACE}}}{name}"
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 def _next_start_boundary(schedule: dict[str, Any], now_utc: datetime) -> datetime:
     now = now_utc.astimezone(timezone.utc)
     if "day_of_month" in schedule:
@@ -128,7 +132,7 @@ def build_task_definition(
 
 def register_task(task_name: str, xml_text: str) -> None:
     """Register one task using schtasks.exe and a temporary UTF-16 XML file."""
-    if os.name != "nt":
+    if not _is_windows():
         raise RuntimeError("scheduled-task registration is supported only on Windows")
     try:
         inventory = subprocess.run(
