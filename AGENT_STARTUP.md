@@ -52,7 +52,7 @@ All ⟨ψ⟩Quantum agents are prefixed `⟨ψ⟩quantum-` and live at `.github/
 - **Cache filler:** `QuantumCacheFill_Monthly`, day 1 at 07:00 UTC
 - **Shor's benchmark:** `ShorsMonthlyBench`, day 1 at 08:00 UTC
 - **VQE benchmark:** `VQEMonthlyBench`, day 15 at 03:00 UTC
-- **Daily monitors:** `QuantumCacheDepletionGuard_Daily` at 06:00 UTC, `PolicyComplianceAudit_Daily` at 07:00 UTC, and `QuantumBackendAvailabilityMonitor_Daily` at 08:00 UTC
+- **Daily monitors:** `QuantumCacheDepletionGuard_Daily` at 06:00 UTC, `PolicyComplianceAudit_Daily` at 07:00 UTC, and `QuantumBackendAvailabilityMonitor_Daily` at 07:45 UTC so fresh provider health is available before Shor's 08:00 UTC run
 - **Source of truth:** `src/config/execution_policy.json` (scripts/docs must read this schedule)
 
 ### Backward Compatibility

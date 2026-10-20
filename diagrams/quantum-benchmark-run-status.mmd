@@ -8,9 +8,9 @@ stateDiagram-v2
     state "run_started<br/>new attempt_id" as Started
     state "Schedule window<br/>plus or minus 15 minutes" as ScheduleWindow
     state "Normalized request<br/>schema 1.0, QPU estimate 300s" as Request
-    state "Provider snapshots<br/>freshness, qubits, quota" as Snapshots
+    state "Provider snapshots<br/>freshness, qubits, quota<br/>IBM health from 07:45 UTC monitor" as Snapshots
     state "Eligible hardware plan?" as HardwareCheck
-    state "approval_required<br/>explicit --approved gate" as ApprovalRequired
+    state "approval_required<br/>manual --approved absent<br/>or scheduled policy denies" as ApprovalRequired
     state "Runnable hardware plan" as HardwareReady
     state "Fallback allowed<br/>and local Aer eligible?" as AerCheck
     state "Runnable local Aer plan" as AerReady
@@ -46,8 +46,8 @@ stateDiagram-v2
     ScheduleWindow --> Request: within run window
     Request --> Snapshots: planner evaluates normalized inputs
     Snapshots --> HardwareCheck: check fresh capability and quota
-    HardwareCheck --> ApprovalRequired: hardware fits, approval absent
-    HardwareCheck --> HardwareReady: hardware fits and approved
+    HardwareCheck --> ApprovalRequired: hardware fits, no approval path succeeds
+    HardwareCheck --> HardwareReady: hardware fits, manual --approved or --scheduled exact policy ID allowed
     HardwareCheck --> AerCheck: no eligible hardware plan
     AerCheck --> AerReady: fallback allowed and Aer snapshot eligible
     AerCheck --> Blocked: fallback disallowed or no provider fits
@@ -82,8 +82,9 @@ stateDiagram-v2
     DashboardRead --> VQEDisplay: show each attempt's status
 
     note right of HardwareCheck
-        Local Aer is eligible only when fallback is allowed
-        and its availability snapshot fits the request.
+        Daily 07:45 UTC monitor persists authenticated IBM platform health to backend_health; stale/down snapshots cannot authorize Shor.
+        Scheduled Shor approval requires --scheduled and the exact policy ID allowlist; manual runs use --approved.
+        Local Aer is eligible only when fallback is allowed and its snapshot fits the request.
         This runner's hardware execution path submits to IBM Runtime.
     end note
     note right of EventStore
@@ -108,7 +109,6 @@ stateDiagram-v2
         Per-attempt unknown reports missing evidence, without cause attribution.
         It does not imply provider cancellation; QPU cap 300s is separate.
     end note
-
 classDef quantum fill:#251a3a,stroke:#a07adf,color:#e8d0f8
 classDef ext     fill:#3a2020,stroke:#ff7a7a,color:#ffd0d0
 classDef db      fill:#3a3010,stroke:#d4c050,color:#f8f0c0

@@ -83,7 +83,7 @@ All times are UTC and must match `src/config/execution_policy.json`:
 - `VQEMonthlyBench`: day 15 at 03:00
 - `QuantumCacheDepletionGuard_Daily`: daily at 06:00
 - `PolicyComplianceAudit_Daily`: daily at 07:00
-- `QuantumBackendAvailabilityMonitor_Daily`: daily at 08:00
+- `QuantumBackendAvailabilityMonitor_Daily`: daily at 07:45, before the 08:00 Shor benchmark
 
 ---
 

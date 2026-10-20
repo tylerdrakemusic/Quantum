@@ -22,7 +22,7 @@ graph TB
     Lifecycle[Append-only execution lifecycle<br/>received → normalized → planned<br/>→ running → completed or blocked]:::state
     Decisions[Append-only execution decisions<br/>status · reason codes · provider]:::state
     Health[Backend health and retry status]:::state
-    PackageCompat[Derived package compatibility view<br/>installed API + smoke boundary]:::state
+    TaskSync[UTC tasks<br/>execution_policy.json → sync_scheduled_tasks.py<br/>→ Windows Task Scheduler<br/>cache fill · Shor · VQE · health monitor]:::state
     TimeCrystal[Isolated local-only time-crystal capability<br/>src/time_crystal<br/>Floquet Ising dynamics + typed evidence]:::quantum
     Shor --> ControlPlane
     VQE --> ControlPlane
@@ -50,7 +50,7 @@ graph TB
     Health -.->|bounded retry and health gates| IBM
     Health -.->|bounded retry and health gates| Braket
     TimeCrystal -->|"EvidenceReport generation + replay panel"| Evidence
-    PackageCompat -.->|"see derived view"| ControlPlane
+    TaskSync -.->|routes Shor and VQE into the control plane| ControlPlane
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
 classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc

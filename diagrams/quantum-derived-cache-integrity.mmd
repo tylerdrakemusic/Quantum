@@ -4,6 +4,10 @@
 graph TB
     Overview[quantum-architecture.mmd<br/>cache lifecycle summary]
     subgraph Inputs["Cache lifecycle inputs"]
+        TaskPolicy[execution_policy.json<br/>cache fill day 1 at 07:00 UTC]
+        TaskSync[tools/sync_scheduled_tasks.py<br/>dry-run first, --apply opt-in]
+        TaskScheduler[Windows Task Scheduler<br/>UTC recurrence]
+        CacheFillTask[QuantumCacheFill_Monthly]
         GuardTask[QuantumCacheDepletionGuard_Daily]
         CacheGuard[tools/cache_depletion_guard.py]
         FillCache[tools/fill_cache.py]
@@ -21,6 +25,7 @@ graph TB
         IntegrityStatus[quantum_rt/dashboard<br/>integrity status]
     end
     Reports[reports/<br/>benchmark dashboard]
+    TaskPolicy -.-> TaskSync -.-> TaskScheduler -.-> CacheFillTask -.-> FillCache
     GuardTask --> CacheGuard
     CacheGuard --> CacheHealthLog
     CacheGuard --> FillCache
