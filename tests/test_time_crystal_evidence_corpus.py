@@ -32,6 +32,28 @@ def _fixture(name: str) -> str:
     return (FIXTURE_DIR / name).read_text(encoding="utf-8")
 
 
+@pytest.fixture
+def isolated_dashboard_sources(monkeypatch, tmp_path):
+    db_path = tmp_path / "unexpected-dashboard-db.db"
+    monkeypatch.setenv("QUANTUM_DB_PATH", str(db_path))
+    monkeypatch.setattr(dashboard, "_load_policy_events", lambda _policy_id: [])
+    monkeypatch.setattr(dashboard, "_load_schedule_policy", lambda _policy_id: {})
+    monkeypatch.setattr(
+        dashboard,
+        "_load_cache_widget_data",
+        lambda: {
+            "current_bits": 0,
+            "last_fill_peak": 0,
+            "pct_consumed": 0.0,
+            "sparkline_points": [],
+        },
+    )
+    monkeypatch.setattr(dashboard, "_get_orion_tag", lambda mode=None: "")
+    monkeypatch.setattr(dashboard, "_load_orion_prompts_json", lambda: "{}")
+    monkeypatch.setattr(dashboard, "_load_orion_current_mode", lambda: "idle")
+    return db_path
+
+
 def _fixture_request() -> ComparativeRequest:
     return ComparativeRequest(
         protocol=FloquetIsingProtocol(
@@ -79,7 +101,10 @@ def test_future_schema_fixture_fails_closed() -> None:
         EvidenceReport.from_json(_fixture("future_schema_v2.json"))
 
 
-def test_dashboard_keeps_title_history_and_unrelated_sections_on_report_failure(monkeypatch) -> None:
+def test_dashboard_keeps_title_history_and_unrelated_sections_on_report_failure(
+    monkeypatch,
+    isolated_dashboard_sources,
+) -> None:
     def fail() -> str:
         raise RuntimeError("injected report-generation failure")
 
@@ -91,9 +116,13 @@ def test_dashboard_keeps_title_history_and_unrelated_sections_on_report_failure(
     assert "VQE" in rendered
     assert "Unavailable" in rendered
     assert "injected report-generation failure" in rendered
+    assert not isolated_dashboard_sources.exists()
 
 
-def test_dashboard_keeps_title_history_and_unrelated_sections_on_replay_failure(monkeypatch) -> None:
+def test_dashboard_keeps_title_history_and_unrelated_sections_on_replay_failure(
+    monkeypatch,
+    isolated_dashboard_sources,
+) -> None:
     def fail(*args: object, **kwargs: object) -> object:
         raise RuntimeError("injected replay failure")
 
@@ -105,3 +134,4 @@ def test_dashboard_keeps_title_history_and_unrelated_sections_on_replay_failure(
     assert "VQE" in rendered
     assert "Unavailable" in rendered
     assert "injected replay failure" in rendered
+    assert not isolated_dashboard_sources.exists()

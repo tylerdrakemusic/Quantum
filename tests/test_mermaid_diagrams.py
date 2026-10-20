@@ -28,7 +28,7 @@ EXPECTED_MANIFEST = {
                 "diagrams/quantum-benchmark-run-status.mmd",
             ],
         },
-        "metrics": {"utf8_characters": 3424, "utf8_bytes": 3447, "nodes": 40, "edges": 27},
+        "metrics": {"utf8_characters": 3504, "utf8_bytes": 3534, "nodes": 40, "edges": 27},
     },
     "diagrams/quantum-db-schema.mmd": {
         "kind": "database-schema",
@@ -45,7 +45,7 @@ EXPECTED_MANIFEST = {
             "parent": "diagrams/quantum-architecture.mmd",
             "derived_views": [],
         },
-        "metrics": {"utf8_characters": 2743, "utf8_bytes": 2743, "nodes": 28, "edges": 14},
+        "metrics": {"utf8_characters": 3101, "utf8_bytes": 3101, "nodes": 32, "edges": 15},
     },
     "diagrams/quantum-randomness-service.mmd": {
         "kind": "architecture-detail",
@@ -75,7 +75,7 @@ EXPECTED_MANIFEST = {
             "parent": "diagrams/quantum-architecture.mmd",
             "derived_views": [],
         },
-        "metrics": {"utf8_characters": 7364, "utf8_bytes": 7364, "nodes": 41, "edges": 43},
+        "metrics": {"utf8_characters": 7720, "utf8_bytes": 7720, "nodes": 41, "edges": 43},
     },
     "diagrams/quantum-tech-stack.mmd": {
         "kind": "technology-stack",
@@ -174,6 +174,8 @@ def test_quantum_manifest_enumerates_sources_and_cache_integrity_lineage() -> No
 def test_quantum_benchmark_terminal_event_precedes_static_dashboard_regeneration() -> None:
     source = (DIAGRAMS_DIR / "quantum-benchmark-run-status.mmd").read_text(encoding="utf-8")
 
+    assert 'state "Provider snapshots<br/>freshness, qubits, quota<br/>IBM health from 07:45 UTC monitor" as Snapshots' in source
+    assert "Daily 07:45 UTC monitor persists authenticated IBM platform health to backend_health; stale/down snapshots cannot authorize Shor." in source
     assert "Persist --> RunCompleted: result and provenance persisted" in source
     assert "RunCompleted --> EventStore: persist with same attempt_id" in source
     assert "EventStore --> DashboardBuild: result row persisted, read terminal event" in source
@@ -205,6 +207,20 @@ def test_quantum_benchmark_terminal_event_precedes_static_dashboard_regeneration
     assert "configured 7200s prior-attempt reconciliation." in source
     assert "Per-attempt unknown reports missing evidence, without cause attribution." in source
     assert "It does not imply provider cancellation;" in source
+
+
+def test_quantum_scheduler_and_scheduled_shor_approval_paths_are_documented() -> None:
+    architecture = (DIAGRAMS_DIR / "quantum-architecture.mmd").read_text(encoding="utf-8")
+    cache = (DIAGRAMS_DIR / "quantum-derived-cache-integrity.mmd").read_text(encoding="utf-8")
+    status = (DIAGRAMS_DIR / "quantum-benchmark-run-status.mmd").read_text(encoding="utf-8")
+
+    assert "execution_policy.json → sync_scheduled_tasks.py" in architecture
+    assert "Windows Task Scheduler" in architecture
+    assert "TaskSync -.->|routes Shor and VQE into the control plane| ControlPlane" in architecture
+    assert "TaskPolicy -.-> TaskSync -.-> TaskScheduler -.-> CacheFillTask -.-> FillCache" in cache
+    assert 'state "approval_required<br/>manual --approved absent<br/>or scheduled policy denies" as ApprovalRequired' in status
+    assert "Scheduled Shor approval requires --scheduled and the exact policy ID allowlist" in status
+    assert "HardwareCheck --> HardwareReady: hardware fits, manual --approved or --scheduled exact policy ID allowed" in status
 
 
 def test_quantum_manifest_split_metadata_matches_measured_budget_contract() -> None:
