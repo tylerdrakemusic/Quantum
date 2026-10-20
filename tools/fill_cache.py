@@ -354,7 +354,7 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
     conn = init_db.get_connection()
     supervisor = RetrySupervisor(conn=conn)
 
-    while qpu_seconds_consumed < max_qpu_seconds:
+    while qpu_seconds_consumed < max_qpu_seconds and supervisor.remaining_ibm_calls > 0:
         remaining = max_qpu_seconds - qpu_seconds_consumed
         jobs_submitted += 1
         job_id = f"fill-cache-{jobs_submitted}"
@@ -415,6 +415,11 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
     _logger.info("Jobs completed : %d", jobs_completed)
     _logger.info("QPU time used  : %.1f s", qpu_seconds_consumed)
     _logger.info("Total bits     : %d", total_bits)
+    if supervisor.remaining_ibm_calls == 0 and qpu_seconds_consumed < max_qpu_seconds:
+        _logger.info(
+            "IBM call cap reached with %d valid bits; stopping without exceeding the batch quota guard.",
+            total_bits,
+        )
 
     if job_failed:
         _logger.error(
@@ -528,7 +533,7 @@ def main() -> None:
                     timer_start,
                 ),
             )
-        sys.exit(0)
+        sys.exit(0 if args.dry_run or bits > 0 else 1)
     except KeyboardInterrupt:
         _logger.info("Interrupted by user — partial results discarded.")
         log_attempt_event(

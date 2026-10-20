@@ -104,6 +104,11 @@ class RetrySupervisor:
         self._ibm_calls_made = 0
         self._queue: list[Job] = []
 
+    @property
+    def remaining_ibm_calls(self) -> int:
+        """Return how many real IBM calls remain under this batch's hard cap."""
+        return max(self.ibm_call_cap - self._ibm_calls_made, 0)
+
     def enqueue(self, job: Job) -> None:
         """Add a job to the batch and persist an initial PENDING row."""
         self._queue.append(job)

@@ -55,6 +55,19 @@ def policy_shared_qpu_budget_seconds(default: int = 600) -> int:
         return default
 
 
+def policy_scheduled_hardware_approved(policy_id: str) -> bool:
+    """Return whether the policy explicitly authorizes scheduled hardware runs."""
+    try:
+        approvals = load_policy_config().get("scheduled_hardware_approvals", [])
+        if not isinstance(approvals, list) or any(
+            not isinstance(approved_policy_id, str) for approved_policy_id in approvals
+        ):
+            return False
+        return policy_id in approvals
+    except (PolicyConfigError, TypeError):
+        return False
+
+
 def next_run_utc(policy_id: str, now_utc: datetime | None = None) -> datetime:
     """Compute next monthly run timestamp in UTC for a policy id."""
     schedule = policy_schedule(policy_id)

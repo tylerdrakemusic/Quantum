@@ -859,6 +859,10 @@ def _parse_args() -> argparse.Namespace:
         help="Explicitly approve a runnable hardware plan for this invocation.",
     )
     parser.add_argument(
+        "--scheduled", action="store_true",
+        help="Apply the hardware approval configured for this scheduled policy.",
+    )
+    parser.add_argument(
         "--now-utc", type=str, default="",
         help="Planning timestamp override for controlled scheduled runs (ISO-8601 UTC).",
     )
@@ -906,11 +910,15 @@ def main() -> None:
     log_attempt_event(event_type="run_started", status="started", detail=started_detail)
 
     try:
+        scheduled_approval = (
+            getattr(args, "scheduled", False)
+            and execution_policy.policy_scheduled_hardware_approved(POLICY_ID)
+        )
         result = run_benchmark(
             n_value=args.n,
             dry_run=args.dry_run,
             max_qpu_seconds=args.max_qpu_seconds,
-            approved=args.approved,
+            approved=args.approved or scheduled_approval,
             now_utc=args.now_utc or None,
         )
     except Exception as exc:
@@ -997,7 +1005,7 @@ def main() -> None:
     print(f"  Factors: {result['factor_found'] or 'not found'}")
     print(f"{'='*56}\n")
 
-    sys.exit(0)
+    sys.exit(0 if result["success"] else 1)
 
 
 if __name__ == "__main__":
