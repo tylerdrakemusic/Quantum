@@ -74,7 +74,26 @@ def test_build_normalized_replay_table_shows_family_status_without_composite_sco
     assert "composite" not in html.lower()
 
 
-def test_generate_html_exposes_vqe_geometry_ansatz_comparison() -> None:
+def test_generate_html_exposes_vqe_geometry_ansatz_comparison(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(module, "_load_policy_events", lambda _policy_id: [])
+    monkeypatch.setattr(module, "_load_schedule_policy", lambda _policy_id: {})
+    monkeypatch.setattr(
+        module,
+        "_load_cache_widget_data",
+        lambda: {
+            "current_bits": 0,
+            "last_fill_peak": 0,
+            "pct_consumed": 0.0,
+            "sparkline_points": [],
+        },
+    )
+    monkeypatch.setattr(module, "_safe_time_crystal_panel", lambda: "")
+    monkeypatch.setattr(module, "_get_orion_tag", lambda mode=None: "")
+    monkeypatch.setattr(module, "_load_orion_prompts_json", lambda: "{}")
+    monkeypatch.setattr(module, "_load_orion_current_mode", lambda: "idle")
+
     html = module.generate_html(
         [], [], [], "2026-09-06T00:00:00Z", [], {},
         vqe_runs=[

@@ -95,7 +95,7 @@ through the 0.x compatibility period and is not the source of new API.
   - `VQEMonthlyBench` (day 15, 03:00)
   - `QuantumCacheDepletionGuard_Daily` (daily, 06:00)
   - `PolicyComplianceAudit_Daily` (daily, 07:00)
-  - `QuantumBackendAvailabilityMonitor_Daily` (daily, 08:00)
+  - `QuantumBackendAvailabilityMonitor_Daily` (daily, 07:45, before the Shor benchmark)
 - 10-minute monthly quota on IBM Quantum (free tier)
 - Backend: `ibm_fez` (156-qubit Eagle processor)
 - Falls back to the `secrets` OS CSPRNG when the cache is absent, rejected, or exhausted

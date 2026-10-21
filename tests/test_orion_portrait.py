@@ -83,6 +83,29 @@ def _install_offline_svg_cascade(
     )
 
 
+def _isolate_dashboard_sources(
+    monkeypatch: pytest.MonkeyPatch,
+    module: ModuleType,
+    db_path: Path,
+) -> None:
+    monkeypatch.setenv("QUANTUM_DB_PATH", str(db_path))
+    monkeypatch.setattr(module, "_load_policy_events", lambda _policy_id: [])
+    monkeypatch.setattr(module, "_load_schedule_policy", lambda _policy_id: {})
+    monkeypatch.setattr(
+        module,
+        "_load_cache_widget_data",
+        lambda: {
+            "current_bits": 0,
+            "last_fill_peak": 0,
+            "pct_consumed": 0.0,
+            "sparkline_points": [],
+        },
+    )
+    monkeypatch.setattr(module, "_safe_time_crystal_panel", lambda: "")
+    monkeypatch.setattr(module, "_load_orion_prompts_json", lambda: "{}")
+    monkeypatch.setattr(module, "_load_orion_current_mode", lambda: "idle")
+
+
 # ---------------------------------------------------------------------------
 # AC1 — get_daily_portrait returns a valid Path for all 3 modes
 # ---------------------------------------------------------------------------
@@ -391,6 +414,8 @@ class TestDashboardIntegration:
 
     def test_generate_html_contains_orion_portrait(self, tmp_path, monkeypatch):
         dash = _fresh_module("_gbd_portrait", _TOOLS / "gen_benchmark_dashboard.py")
+        db_path = tmp_path / "unexpected-dashboard-db.db"
+        _isolate_dashboard_sources(monkeypatch, dash, db_path)
         # Patch _get_orion_tag to avoid real portrait generation
         monkeypatch.setattr(
             dash, "_get_orion_tag",
@@ -398,6 +423,7 @@ class TestDashboardIntegration:
             raising=False,
         )
         html_out = dash.generate_html([], [], [], "2026-05-30T00:00:00Z", [], {})
+        assert not db_path.exists()
         assert "orion" in html_out.lower(), (
             "Expected 'orion' somewhere in generated HTML"
         )
@@ -409,8 +435,11 @@ class TestDashboardIntegration:
         image_tag = portrait.get_portrait_img_tag(max_width=120, mode="result_ready")
 
         dash = _fresh_module("_gbd_offline_svg", _TOOLS / "gen_benchmark_dashboard.py")
+        db_path = tmp_path / "unexpected-dashboard-db.db"
+        _isolate_dashboard_sources(monkeypatch, dash, db_path)
         monkeypatch.setattr(dash, "_get_orion_tag", lambda mode=None: image_tag)
         html_out = dash.generate_html([], [], [], "2026-05-30T00:00:00Z", [], {})
+        assert not db_path.exists()
         proof_html = tmp_path / "benchmark_dashboard_offline.html"
         proof_html.write_text(html_out, encoding="utf-8")
 
@@ -421,12 +450,15 @@ class TestDashboardIntegration:
 
     def test_generate_html_contains_edit_button(self, tmp_path, monkeypatch):
         dash = _fresh_module("_gbd_edit", _TOOLS / "gen_benchmark_dashboard.py")
+        db_path = tmp_path / "unexpected-dashboard-db.db"
+        _isolate_dashboard_sources(monkeypatch, dash, db_path)
         monkeypatch.setattr(
             dash, "_get_orion_tag",
             lambda mode=None: "",
             raising=False,
         )
         html_out = dash.generate_html([], [], [], "2026-05-30T00:00:00Z", [], {})
+        assert not db_path.exists()
         lower = html_out.lower()
         assert "orion" in lower, "Expected 'orion' in dashboard HTML"
         assert ("edit" in lower or "prompt" in lower), (

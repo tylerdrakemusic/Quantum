@@ -5,6 +5,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,24 +16,84 @@ sys.path.insert(0, str(ROOT / "tools"))
 import backend_availability_monitor as monitor
 
 
-def test_tcp_probe_success(monkeypatch):
-    mock_conn = MagicMock()
-    monkeypatch.setattr("socket.create_connection", lambda *args, **kwargs: mock_conn)
-    status, latency_ms, error = monitor._tcp_probe("example.com", 443, timeout=0.1)
+def test_ibm_check_uses_platform_backend_api(monkeypatch):
+    monkeypatch.setenv("IBM_CLOUD_API_KEY", "test-api-key")
+    monkeypatch.setenv("IBM_QUANTUM_INSTANCE", "test-instance-crn")
+    calls: list[dict[str, object]] = []
+
+    class FakeService:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        def backends(self, **kwargs):
+            calls.append(kwargs)
+            return [SimpleNamespace(name="ibm_fez", num_qubits=156)]
+
+    monkeypatch.setitem(
+        sys.modules,
+        "qiskit_ibm_runtime",
+        SimpleNamespace(QiskitRuntimeService=FakeService),
+    )
+    status, latency_ms, error = monitor._check_ibm_quantum()
+
     assert status == "up"
     assert latency_ms is not None
     assert error == ""
+    assert calls[0] == {
+        "channel": "ibm_quantum_platform",
+        "token": "test-api-key",
+        "instance": "test-instance-crn",
+    }
+    assert calls[1] == {"simulator": False, "operational": True, "min_num_qubits": 8}
 
 
-def test_tcp_probe_failure(monkeypatch):
-    def raise_error(*args, **kwargs):
-        raise OSError("failed")
+def test_ibm_check_is_down_when_no_operational_hardware_is_available(monkeypatch):
+    monkeypatch.setenv("IBM_CLOUD_API_KEY", "test-api-key")
+    monkeypatch.setenv("IBM_QUANTUM_INSTANCE", "test-instance-crn")
 
-    monkeypatch.setattr("socket.create_connection", raise_error)
-    status, latency_ms, error = monitor._tcp_probe("example.com", 443, timeout=0.1)
+    class FakeService:
+        def __init__(self, **kwargs):
+            pass
+
+        def backends(self, **kwargs):
+            return []
+
+    monkeypatch.setitem(
+        sys.modules,
+        "qiskit_ibm_runtime",
+        SimpleNamespace(QiskitRuntimeService=FakeService),
+    )
+
+    status, latency_ms, error = monitor._check_ibm_quantum()
+
     assert status == "down"
     assert latency_ms is not None
-    assert "failed" in error
+    assert "no operational ibm quantum hardware backend" in error.lower()
+
+
+def test_ibm_check_redacts_credentials_from_provider_errors(monkeypatch):
+    api_key = "test-api-key-that-must-not-persist"
+    instance = "test-instance-crn-that-must-not-persist"
+    monkeypatch.setenv("IBM_CLOUD_API_KEY", api_key)
+    monkeypatch.setenv("IBM_QUANTUM_INSTANCE", instance)
+
+    class FakeService:
+        def __init__(self, **kwargs):
+            raise RuntimeError(f"failed for {api_key} at {instance}")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "qiskit_ibm_runtime",
+        SimpleNamespace(QiskitRuntimeService=FakeService),
+    )
+
+    status, latency_ms, error = monitor._check_ibm_quantum()
+
+    assert status == "down"
+    assert latency_ms is not None
+    assert api_key not in error
+    assert instance not in error
+    assert "[REDACTED]" in error
 
 
 def test_http_get_success(monkeypatch):

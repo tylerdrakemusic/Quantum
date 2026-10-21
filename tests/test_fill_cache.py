@@ -198,7 +198,7 @@ def test_main_records_non_negative_elapsed_duration_for_completion_outcomes(
     with pytest.raises(SystemExit) as exit_info:
         module.main()
 
-    assert exit_info.value.code == (1 if outcome in {"interruption", "failure"} else 0)
+    assert exit_info.value.code == (1 if outcome in {"zero-bits", "interruption", "failure"} else 0)
     completed = events[-1]
     assert completed["event_type"] == "run_completed"
     assert completed["status"] == expected_status
@@ -237,6 +237,45 @@ def test_run_fill_wired_through_retry_supervisor_records_ibm_job_status(
     assert row is not None
     assert row["status"] == "succeeded"
     assert row["backend"] == "ibm"
+
+
+def test_run_fill_stops_successfully_at_supervisor_ibm_call_cap(
+    monkeypatch, quantum_db_env, tmp_path,
+):
+    root = tmp_path / "quantum"
+    live_dir = root / "src" / "data" / "liveCache"
+    live_dir.mkdir(parents=True)
+    (live_dir / "ty_string_cache.txt").write_text("11\n", encoding="utf-8")
+    monkeypatch.setattr(module, "_ROOT", root)
+    monkeypatch.setattr(module, "_LIVE_DIR", live_dir)
+    monkeypatch.setattr(module, "_LIVE_CACHE", live_dir / "ty_string_cache.txt")
+    monkeypatch.setattr(module, "_BACKUP_DIR", root / "qbackups")
+    monkeypatch.setattr(module, "_CAPACITY_BASELINE", live_dir / "capacity.txt")
+    ibm_runtime = _patch_ibm_connect(monkeypatch)
+
+    sampler = MagicMock()
+
+    def successful_job(*_args, **_kwargs):
+        job = MagicMock()
+        job.result.return_value = _FakeSamplerResult({"01": 1}, execution_seconds=3.0)
+        return job
+
+    sampler.run.side_effect = successful_job
+    ibm_runtime.SamplerV2.return_value = sampler
+
+    total_bits = module.run_fill(max_qpu_seconds=180, dry_run=False)
+
+    assert total_bits == 20
+    assert sampler.run.call_count == 10
+    assert module._LIVE_CACHE.read_text(encoding="utf-8").splitlines() == ["11"] + ["01"] * 10
+    assert len(list((root / "qbackups").glob("ty_string_cache_*.txt"))) == 1
+    conn = init_db.get_connection()
+    rows = conn.execute(
+        "SELECT job_id, status FROM job_retry_status ORDER BY job_id"
+    ).fetchall()
+    conn.close()
+    assert len(rows) == 10
+    assert all(row["status"] == "succeeded" for row in rows)
 
 
 def test_run_fill_permanent_job_failure_raises_but_keeps_partial_success(

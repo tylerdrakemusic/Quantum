@@ -5,13 +5,13 @@
     "quantum_cache_fill_monthly": {
       "task_name": "QuantumCacheFill_Monthly",
       "day_of_month": 1,
-      "hour": 1,
+      "hour": 7,
       "minute": 0
     },
     "shors_monthly_benchmark": {
       "task_name": "ShorsMonthlyBench",
       "day_of_month": 1,
-      "hour": 2,
+      "hour": 8,
       "minute": 0
     },
     "vqe_monthly_benchmark": {
@@ -36,6 +36,14 @@
       "time_utc": "07:00",
       "command": "C:\\G\\python.exe tools\\audit_policy.py",
       "description": "Daily compliance audit of execution_policy.json: schema, linkage, QPU cap coverage, and backup drift checks."
+    },
+    "QuantumBackendAvailabilityMonitor_Daily": {
+      "policy_id": "QuantumBackendAvailabilityMonitor_Daily",
+      "task_name": "QuantumBackendAvailabilityMonitor_Daily",
+      "schedule": "daily",
+      "time_utc": "07:45",
+      "command": "C:\\G\\python.exe tools\\backend_availability_monitor.py",
+      "description": "Refresh provider health before the 08:00 UTC Shor benchmark."
     }
   },
   "qpu_caps_seconds": {
@@ -43,6 +51,50 @@
     "shors_monthly_benchmark": 300,
     "vqe_monthly_benchmark": 600,
     "QuantumCacheDepletionGuard_Daily": 30,
-    "PolicyComplianceAudit_Daily": 30
+    "PolicyComplianceAudit_Daily": 30,
+    "QuantumBackendAvailabilityMonitor_Daily": 30
+  },
+  "run_timeouts_seconds": {
+    "shors_monthly_benchmark": 900,
+    "vqe_monthly_benchmark": 7200,
+    "quantum_cache_fill_monthly": 600
+  },
+  "shared_qpu_budget_seconds": 600,
+  "scheduled_hardware_approvals": [
+    "shors_monthly_benchmark"
+  ],
+  "scheduled_task_actions": {
+    "quantum_cache_fill_monthly": {
+      "executable": "C:\\G\\python.exe",
+      "arguments": ["tools\\fill_cache.py"],
+      "working_directory": ".",
+      "execution_time_limit_seconds": 600,
+      "start_when_available": true,
+      "multiple_instances": "IgnoreNew"
+    },
+    "shors_monthly_benchmark": {
+      "executable": "C:\\G\\python.exe",
+      "arguments": ["tools\\run_shors_bench.py", "--scheduled"],
+      "working_directory": ".",
+      "execution_time_limit_seconds": 900,
+      "start_when_available": false,
+      "multiple_instances": "IgnoreNew"
+    },
+    "vqe_monthly_benchmark": {
+      "executable": "C:\\G\\python.exe",
+      "arguments": ["tools\\run_vqe_bench.py", "--molecule", "all"],
+      "working_directory": ".",
+      "execution_time_limit_seconds": 7200,
+      "start_when_available": false,
+      "multiple_instances": "IgnoreNew"
+    },
+    "QuantumBackendAvailabilityMonitor_Daily": {
+      "executable": "C:\\G\\python.exe",
+      "arguments": ["tools\\backend_availability_monitor.py"],
+      "working_directory": ".",
+      "execution_time_limit_seconds": 30,
+      "start_when_available": false,
+      "multiple_instances": "IgnoreNew"
+    }
   }
 }

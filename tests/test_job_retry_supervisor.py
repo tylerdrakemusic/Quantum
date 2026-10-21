@@ -145,6 +145,47 @@ def test_default_backoff_schedule_is_1_4_16(quantum_db_env):
     assert supervisor.max_attempts == 3
 
 
+def test_remaining_ibm_calls_counts_real_calls_and_excludes_aer(quantum_db_env):
+    conn = init_db.get_connection()
+    supervisor = RetrySupervisor(conn=conn, sleep_fn=_sleepless, ibm_call_cap=2)
+    assert supervisor.remaining_ibm_calls == 2
+
+    supervisor.enqueue(Job(job_id="ibm-one", backend="ibm", run_fn=lambda: None))
+    supervisor.run_all()
+    assert supervisor.remaining_ibm_calls == 1
+    supervisor._queue.clear()
+
+    supervisor.enqueue(Job(job_id="aer-one", backend="aer", run_fn=lambda: None))
+    supervisor.run_all()
+    conn.close()
+
+    assert supervisor.remaining_ibm_calls == 1
+
+
+def test_remaining_ibm_calls_includes_retry_attempts(quantum_db_env):
+    conn = init_db.get_connection()
+    supervisor = RetrySupervisor(
+        conn=conn,
+        sleep_fn=_sleepless,
+        max_attempts=1,
+        backoff_schedule=(0,),
+        ibm_call_cap=2,
+    )
+    attempts = {"count": 0}
+
+    def fail_once_then_succeed():
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("transient provider failure")
+
+    supervisor.enqueue(Job(job_id="ibm-retry", backend="ibm", run_fn=fail_once_then_succeed))
+    supervisor.run_all()
+    conn.close()
+
+    assert attempts["count"] == 2
+    assert supervisor.remaining_ibm_calls == 0
+
+
 def test_ibm_circuit_breaker_caps_real_backend_calls(quantum_db_env):
     """IBM's 10min/month quota must never be at risk from a retry loop.
 

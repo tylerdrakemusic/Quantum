@@ -11,7 +11,7 @@ for scheduled execution by src/config/execution_policy.json.
 from __future__ import annotations
 
 import logging
-import socket
+import os
 import sys
 import time
 import urllib.request
@@ -39,11 +39,6 @@ _LOG = logging.getLogger("backend_availability_monitor")
 # avoids requiring AWS credentials for availability detection.
 _BRAKET_HOSTNAME = "status.aws.amazon.com"
 _BRAKET_PATH = "/"
-
-# IBM Quantum public endpoint for health/status pings. We use a lightweight
-# TCP connect to the IBM Quantum API host to infer reachability.
-_IBM_HOSTNAME = "api.quantum-computing.ibm.com"
-_IBM_PORT = 443
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -89,17 +84,6 @@ def _record_backend_health(
     )
 
 
-def _tcp_probe(hostname: str, port: int, timeout: float = 10.0) -> tuple[str, float | None, str]:
-    start = time.monotonic()
-    try:
-        with socket.create_connection((hostname, port), timeout=timeout):
-            latency_ms = (time.monotonic() - start) * 1000.0
-            return "up", latency_ms, ""
-    except Exception as exc:
-        latency_ms = (time.monotonic() - start) * 1000.0
-        return "down", latency_ms, str(exc)
-
-
 def _http_get(url: str, timeout: float = 10.0) -> tuple[str, float | None, str]:
     start = time.monotonic()
     try:
@@ -117,7 +101,35 @@ def _http_get(url: str, timeout: float = 10.0) -> tuple[str, float | None, str]:
 # ---------------------------------------------------------------------------
 
 def _check_ibm_quantum() -> tuple[str, float | None, str]:
-    return _tcp_probe(_IBM_HOSTNAME, _IBM_PORT)
+    start = time.monotonic()
+    api_key = os.environ.get("IBM_CLOUD_API_KEY", "").strip()
+    instance = os.environ.get("IBM_QUANTUM_INSTANCE", "").strip()
+    try:
+        if not api_key or not instance:
+            raise RuntimeError("IBM Quantum credentials are not configured")
+        from qiskit_ibm_runtime import QiskitRuntimeService
+
+        service = QiskitRuntimeService(
+            channel="ibm_quantum_platform",
+            token=api_key,
+            instance=instance,
+        )
+        backends = service.backends(
+            simulator=False,
+            operational=True,
+            min_num_qubits=8,
+        )
+        latency_ms = (time.monotonic() - start) * 1000.0
+        if not backends:
+            return "down", latency_ms, "No operational IBM Quantum hardware backend with at least 8 qubits."
+        return "up", latency_ms, ""
+    except Exception as exc:  # noqa: BLE001
+        error_msg = str(exc)
+        for secret in (api_key, instance):
+            if secret:
+                error_msg = error_msg.replace(secret, "[REDACTED]")
+        latency_ms = (time.monotonic() - start) * 1000.0
+        return "down", latency_ms, error_msg
 
 
 def _check_amazon_braket() -> tuple[str, float | None, str]:

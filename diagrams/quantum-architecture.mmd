@@ -52,6 +52,8 @@ graph TB
     TimeCrystal -->|"EvidenceReport generation + replay panel"| Evidence
     PackageCompat -.->|"see derived view"| ControlPlane
 
+%% Scheduled tasks for cache, Shor, VQE, and provider health are generated from
+%% execution_policy.json → sync_scheduled_tasks.py → Windows Task Scheduler.
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
 classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc
 classDef quantum  fill:#251a3a,stroke:#a07adf,color:#e8d0f8

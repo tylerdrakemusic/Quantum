@@ -347,6 +347,61 @@ def test_main_correlates_started_and_terminal_events_with_attempt_id(
     assert started["attempt_id"] == terminal["attempt_id"]
 
 
+def test_scheduled_invocation_uses_policy_hardware_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = argparse.Namespace(
+        n=15,
+        max_qpu_seconds=rsb.MAX_QPU_SECONDS,
+        dry_run=False,
+        defer_reason="",
+        manual_override_note="",
+        approved=False,
+        scheduled=True,
+        now_utc="2026-09-01T08:00:00Z",
+    )
+    monkeypatch.setattr(rsb, "_parse_args", lambda: args)
+    monkeypatch.setattr(
+        rsb.execution_policy,
+        "load_policy_config",
+        lambda: {"schedules": {rsb.POLICY_ID: {
+            "task_name": "ShorsMonthlyBench",
+            "day_of_month": 1,
+            "hour": 8,
+            "minute": 0,
+        }}, "scheduled_hardware_approvals": [rsb.POLICY_ID]},
+    )
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        rsb,
+        "run_benchmark",
+        lambda **kwargs: calls.append(kwargs) or {
+            "planner_status": "approval_required",
+            "planner_request": {"request_id": "scheduled-shor"},
+            "planner_result": {"status": "approval_required", "reason_codes": ["test"]},
+        },
+    )
+    monkeypatch.setattr(rsb, "log_policy_event", lambda **_kwargs: None)
+
+    with pytest.raises(SystemExit) as exc_info:
+        rsb.main()
+
+    assert exc_info.value.code == 2
+    assert calls[0]["approved"] is True
+
+
+def test_scheduled_hardware_approval_fails_closed_on_malformed_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        rsb.execution_policy,
+        "load_policy_config",
+        lambda: {"scheduled_hardware_approvals": rsb.POLICY_ID},
+    )
+
+    assert rsb.execution_policy.policy_scheduled_hardware_approved(rsb.POLICY_ID) is False
+
+
 def test_run_shors_bench_uses_result_get_counts(monkeypatch: pytest.MonkeyPatch, quantum_db_env) -> None:
     """The benchmark should use result.get_counts() when supported."""
     fake_counts = {"0010": 4096}
@@ -537,9 +592,10 @@ def test_main_dashboard_regen_uses_static_mode_with_timeout(monkeypatch: pytest.
     fake_run_spy = MagicMock(side_effect=fake_run)
     monkeypatch.setattr(rsb.subprocess, "run", fake_run_spy)
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exc_info:
         rsb.main()
 
+    assert exc_info.value.code == 1
     fake_run_spy.assert_called_once()
     call_args = fake_run_spy.call_args
     cmd_args = call_args.args[0]

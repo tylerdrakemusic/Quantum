@@ -42,6 +42,19 @@ def test_ci_validates_the_exact_wheel_with_runtime_dependencies_outside_checkout
     assert "pytest-junit" in workflow
 
 
+def test_ci_preloads_bundled_openmp_runtimes_before_parallel_pytest() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "test.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "LD_PRELOAD" in workflow
+    preload_step = workflow.index("Configure bundled OpenMP runtime preload")
+    pytest_step = workflow.index("run: python tools/run_tests.py --parallel")
+    assert preload_step < pytest_step
+    assert "scikit_learn.libs/libgomp-*.so*" in workflow
+    assert "qiskit_aer.libs/libgomp-*.so*" in workflow
+
+
 def test_package_validation_tools_enforce_offline_reports_and_exclusions() -> None:
     checker = (REPO_ROOT / "tools" / "check_package_contents.py").read_text(
         encoding="utf-8"
