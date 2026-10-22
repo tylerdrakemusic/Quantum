@@ -31,3 +31,4 @@ midiutil
 pytest-xdist>=3.6,<4.0
 # BDD test tooling
 pytest-bdd>=7.3,<8.0
+PyYAML>=6.0,<7.0

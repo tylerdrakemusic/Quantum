@@ -13,7 +13,7 @@ Shared context, conventions, and rules for all `⟨ψ⟩quantum-*` agents.
 Before doing any work, load context in this order:
 1. `AGENT_STARTUP.md` — current project state
 2. `research/algorithm_roadmap.md` — project and provider context
-3. Read the active FR with `f:\⊕Workspace\src\utils\fr_cli.py get <FR-ID>`
+3. Read an active FR with `fr_cli.py get <FR-ID>` only when the request is explicitly tied to a tracked FR; ordinary Quantum work does not require an active-FR lookup.
 
 ---
 
@@ -72,7 +72,7 @@ Before doing any work, load context in this order:
 - **NEVER expose IBM Quantum API tokens** in logs, output, or research files
 - **NEVER run cache fill when another fill is in progress** — check for running Python processes first
 - **Respect the 10-min monthly quota** — one fill per month is the target cadence
-- **Follow the shared FR/branch protocol** — one FR, branch, worktree, and draft PR per repository; no direct pushes to `main`; branch operations go through `⊕workspace-ci`
+- For explicitly tracked FR work, follow the shared AIDLC branch protocol; ordinary Quantum work follows the project's normal repository workflow. No direct pushes to `main`; branch operations go through `⊕workspace-ci`.
 
 ## Execution Schedule
 

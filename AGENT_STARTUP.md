@@ -10,7 +10,7 @@
 1. Read this file completely
 2. Read research/algorithm_roadmap.md for provider and algorithm context
 3. Read README.md for architecture context if needed
-4. Read the active FR with f:\⊕Workspace\src\utils\fr_cli.py before acting
+4. For work explicitly tied to a tracked FR, read it with `fr_cli.py get <FR-ID>`; ordinary Quantum tasks do not require an active-FR lookup.
 ```
 
 ## 2. Project Location & Key Paths
@@ -77,9 +77,9 @@ The package-facing API is under `src/quantum_toolkit/`. The compatibility module
   creates a timestamped backup before replacement.
 - Never run a cache fill while another fill is active. Respect the 10-minute
   monthly IBM Quantum quota.
-- Each FR uses one branch and one worktree per repository. Use the shared
+- For tracked FR work, use one branch and one worktree per affected repository. Use the shared
   `feature/<FR-ID>`, `fix/<FR-ID>`, or `chore/<FR-ID>` naming convention,
   route branch operations through `⊕workspace-ci`, and never push directly to
   `main`.
-- Before acting, read the FR with `C:\G\python.exe f:\⊕Workspace\src\utils\fr_cli.py get <FR-ID>`.
-- After acting, record one FR event with `fr_cli.py record-event`.
+- Before acting on a tracked FR, read it with `C:\G\python.exe f:\⊕Workspace\src\utils\fr_cli.py get <FR-ID>`.
+- After acting on a tracked FR, record one FR event with `fr_cli.py record-event`.
