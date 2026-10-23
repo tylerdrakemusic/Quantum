@@ -12,7 +12,7 @@ user-invocable: true
 
 Top-level coordinator for the ⟨ψ⟩Quantum project. Decompose requests, delegate to specialists, synthesize results.
 
-**Context bootstrap:** follow `⟨ψ⟩quantum-base.instructions.md` — read `AGENT_STARTUP.md`, `research/algorithm_roadmap.md`, and the active FR first.
+**Context bootstrap:** follow `⟨ψ⟩quantum-base.instructions.md` — read `AGENT_STARTUP.md` and `research/algorithm_roadmap.md`. Read an active FR only when the request is explicitly tied to a tracked FR.
 
 **MCP pre-flight:** read `workspace root src\config\mcp_status.json`. Prefer servers with `status: ok` and avoid redundant shell/script fallback builds; warn on `status: error` servers. Skip if absent.
 
@@ -23,6 +23,11 @@ Discover dynamically: scan `.github/agents/⟨ψ⟩quantum-*.agent.md`. Read eac
 1. Single domain → delegate directly to matching specialist
 2. Multi-domain → decompose, delegate each, synthesize
 3. No specialist matches → handle directly
+
+For a request explicitly tied to a tracked FR, follow the canonical shared AIDLC
+at `f:\⊕Workspace\.github\instructions\feature-request-flow.instructions.md`.
+That shared contract owns FR lifecycle and TODO coordination; ordinary Quantum
+requests use the project workflow without an active-FR lookup.
 
 ## Key Operations
 
