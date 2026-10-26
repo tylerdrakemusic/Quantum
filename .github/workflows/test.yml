@@ -91,6 +91,21 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest
 
+      - name: Install pinned Ruff for advisory checks
+        run: |
+          mkdir -p tmp/ruff-advisory-local
+          if python -m pip install ruff==0.17.2 >tmp/ruff-advisory-local/ruff-install.log 2>&1; then
+            echo "Pinned Ruff installed."
+          else
+            echo "Ruff installation failed; local advisory diagnostics will record the tool error."
+          fi
+
+      - name: Run advisory Ruff checks
+        if: always()
+        run: |
+          mkdir -p tmp/ruff-advisory-local
+          python tools/run_ruff_advisory.py --config pyproject.toml --output-dir tmp/ruff-advisory-local 2>tmp/ruff-advisory-local/runner.stderr.txt || echo "Advisory report generation failed; CI remains advisory." >&2
+
       - name: Report bounded long-running tests
         shell: bash
         run: |
@@ -134,3 +149,12 @@ jobs:
         with:
           name: pytest-junit
           path: tmp/pytest-junit.xml
+
+      - name: Upload advisory Ruff report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-advisory-quantum-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/ruff-advisory-ci/${{ github.run_id }}-${{ github.run_attempt }}/summary.json
+          if-no-files-found: warn
+          retention-days: 30

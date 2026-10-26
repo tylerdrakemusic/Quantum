@@ -70,6 +70,9 @@ logs/
 
 # Temp / cache
 *.download
+tmp/ruff-advisory/
+tmp/ruff-advisory-local/
+tmp/ruff-advisory-ci/
 
 # Environment & secrets
 .env
