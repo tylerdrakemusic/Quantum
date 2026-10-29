@@ -36,6 +36,9 @@ graph TB
     Health --> Snapshot; Health --> Gates
     Simulator ==> Lifecycle; IBM ==> Lifecycle; Braket ==> Lifecycle
     Lifecycle ==> Database
+    CI[GitHub Actions test job]:::quantum
+    CI --> MypyAdvisory["mypy==1.18.2<br/>CI-only advisory report<br/>not a runtime dependency"]:::state
+    CI --> Pytest["pytest<br/>required CI gate"]:::state
 
 classDef life     fill:#1a2e3a,stroke:#6ab4d4,color:#d0ecf8
 classDef music    fill:#3a1a24,stroke:#d47a8f,color:#f8d0dc

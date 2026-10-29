@@ -82,7 +82,7 @@ EXPECTED_MANIFEST = {
         "category": "technology-stack",
         "split_required": False,
         "lineage": {"parent": None, "derived_views": []},
-        "metrics": {"utf8_characters": 2505, "utf8_bytes": 2522, "nodes": 27, "edges": 10},
+        "metrics": {"utf8_characters": 2712, "utf8_bytes": 2729, "nodes": 30, "edges": 12},
     },
 }
 
