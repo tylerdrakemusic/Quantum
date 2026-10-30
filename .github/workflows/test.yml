@@ -106,6 +106,21 @@ jobs:
           mkdir -p tmp/ruff-advisory-local
           python tools/run_ruff_advisory.py --config pyproject.toml --output-dir tmp/ruff-advisory-local 2>tmp/ruff-advisory-local/runner.stderr.txt || echo "Advisory report generation failed; CI remains advisory." >&2
 
+      - name: Install pinned mypy for advisory checks
+        run: |
+          mkdir -p tmp/mypy-advisory-local
+          if python -m pip install mypy==1.18.2 >tmp/mypy-advisory-local/mypy-install.log 2>&1; then
+            echo "Pinned mypy installed."
+          else
+            echo "mypy installation failed; advisory diagnostics will record the tool error."
+          fi
+
+      - name: Run advisory mypy checks
+        if: always()
+        run: |
+          mkdir -p tmp/mypy-advisory-local
+          python tools/run_mypy_advisory.py --config pyproject.toml --output-dir tmp/mypy-advisory-local 2>tmp/mypy-advisory-local/runner.stderr.txt || echo "Advisory report generation failed; CI remains advisory." >&2
+
       - name: Report bounded long-running tests
         shell: bash
         run: |
@@ -156,5 +171,14 @@ jobs:
         with:
           name: ruff-advisory-quantum-${{ github.run_id }}-${{ github.run_attempt }}
           path: tmp/ruff-advisory-ci/${{ github.run_id }}-${{ github.run_attempt }}/summary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload advisory mypy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypy-advisory-quantum-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/mypy-advisory-ci/${{ github.run_id }}-${{ github.run_attempt }}/summary.json
           if-no-files-found: warn
           retention-days: 30
