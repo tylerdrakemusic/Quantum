@@ -22,7 +22,7 @@ def test_initial_mypy_configuration_limits_scan_to_one_module() -> None:
     assert mypy_config.get("follow_imports") == "skip"
 
 
-def test_mypy_artifact_upload_does_not_gate_ci() -> None:
+def test_mypy_artifact_upload_warns_when_advisory_report_is_missing() -> None:
     project_root = Path(__file__).resolve().parent.parent
     workflow = (project_root / ".github" / "workflows" / "test.yml").read_text(
         encoding="utf-8"
@@ -33,7 +33,9 @@ def test_mypy_artifact_upload_does_not_gate_ci() -> None:
     )
 
     assert step_match is not None
-    assert re.search(r"(?m)^        continue-on-error: true$", step_match.group("body"))
+    assert re.search(r"(?m)^        if: always\(\)$", step_match.group("body"))
+    assert re.search(r"(?m)^          if-no-files-found: warn$", step_match.group("body"))
+    assert "continue-on-error" not in step_match.group("body")
 
 
 def test_runner_reports_findings_and_shared_metadata_without_gating(
