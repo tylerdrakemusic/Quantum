@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 
 PROJECT_ROOT = Path(__file__).parents[1]
 
@@ -38,7 +40,13 @@ def test_canonical_ci_bounds_exactly_the_lih_test_with_reason_and_count() -> Non
     assert "LiH" in workflow
     assert "15 min" in workflow
     assert "run: python tools/run_tests.py --parallel --junitxml tmp/pytest-junit.xml" in workflow
-    assert "continue-on-error" not in workflow
+    for job in yaml.safe_load(workflow)["jobs"].values():
+        assert job.get("continue-on-error", False) is False
+        for step in job["steps"]:
+            if step.get("name") == "Upload advisory mypy report":
+                assert step.get("uses") == "actions/upload-artifact@v4"
+                continue
+            assert step.get("continue-on-error", False) is False
 
 
 def test_qiskit_eve_qber_uses_stable_small_sample_average() -> None:
