@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import tomllib
 from typing import Sequence
@@ -19,6 +20,20 @@ def test_initial_mypy_configuration_limits_scan_to_one_module() -> None:
     assert mypy_config.get("python_version") == "3.11"
     assert mypy_config.get("no_incremental") is True
     assert mypy_config.get("follow_imports") == "skip"
+
+
+def test_mypy_artifact_upload_does_not_gate_ci() -> None:
+    project_root = Path(__file__).resolve().parent.parent
+    workflow = (project_root / ".github" / "workflows" / "test.yml").read_text(
+        encoding="utf-8"
+    )
+    step_match = re.search(
+        r"(?ms)^      - name: Upload advisory mypy report\n(?P<body>.*?)(?=^      - name:|\Z)",
+        workflow,
+    )
+
+    assert step_match is not None
+    assert re.search(r"(?m)^        continue-on-error: true$", step_match.group("body"))
 
 
 def test_runner_reports_findings_and_shared_metadata_without_gating(
@@ -157,6 +172,62 @@ def test_runner_reports_mypy_version_mismatch_as_advisory_tool_error(
     assert ci_report["mypy_version"] == "mypy 1.10.1 (compiled: yes)"
     assert ci_report["tool_errors"]["version"] is True
     assert "- Tool errors: `version`" in step_summary
+
+
+def test_runner_reports_unrecognized_mypy_version_as_advisory_tool_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_spec = importlib.util.find_spec("tools.run_mypy_advisory")
+    assert module_spec is not None, "mypy advisory runner is missing"
+    from tools import run_mypy_advisory
+
+    config_path = tmp_path / "pyproject.toml"
+    config_path.write_text("[tool.mypy]\npython_version = '3.11'\n", encoding="utf-8")
+    source_path = tmp_path / "src" / "quantum_toolkit" / "benchmark_provenance.py"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("value: int = 1\n", encoding="utf-8")
+    output_dir = tmp_path / "tmp" / "mypy-advisory-local"
+    ci_summary_path = tmp_path / "tmp" / "mypy-advisory-ci" / "8102-1" / "summary.json"
+
+    def fake_run_command(
+        command: Sequence[str], *, cwd: Path | None = None
+    ) -> dict[str, str | int | None]:
+        if command[-1:] == ["--version"]:
+            return {"returncode": 0, "stdout": "unexpected version output\n", "stderr": ""}
+        if list(command) == ["git", "rev-parse", "HEAD"]:
+            return {"returncode": 0, "stdout": "abc1234\n", "stderr": ""}
+        if list(command) == ["git", "remote", "get-url", "origin"]:
+            return {"returncode": 0, "stdout": "https://github.com/owner/repo.git\n", "stderr": ""}
+        if "-m" in command and "mypy" in command:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(run_mypy_advisory, "PROJECT_ROOT", tmp_path, raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setenv("GITHUB_RUN_ID", "8102")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+    monkeypatch.setattr(run_mypy_advisory, "run_command", fake_run_command)
+
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    result = run_mypy_advisory.main(
+        [
+            "--config",
+            "pyproject.toml",
+            "--output-dir",
+            str(output_dir),
+            "--paths",
+            "src/quantum_toolkit/benchmark_provenance.py",
+        ]
+    )
+
+    report = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+    ci_report = json.loads(ci_summary_path.read_text(encoding="utf-8"))
+    assert result == 0
+    assert report["mypy_version"] == "unavailable"
+    assert report["tool_errors"]["version"]
+    assert ci_report["mypy_version"] == "unavailable"
+    assert ci_report["tool_errors"]["version"] is True
 
 
 def test_runner_anchors_scope_to_repository_and_rejects_without_gating(

@@ -265,8 +265,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     version_match = _VERSION_RE.fullmatch(observed_version)
     version = observed_version if version_match else "unavailable"
     version_error = _command_error(version_result, (0,))
-    if version_error is None and version_match:
-        if version_match.group("version") != _EXPECTED_MYPY_VERSION:
+    if version_error is None:
+        if version_match is None:
+            version_error = "Could not parse mypy version output"
+        elif version_match.group("version") != _EXPECTED_MYPY_VERSION:
             version_error = f"Expected mypy {_EXPECTED_MYPY_VERSION}, observed {observed_version}"
     tool_errors = {
         "version": version_error,
