@@ -937,6 +937,7 @@ def main() -> None:
     }:
         detail = _planner_event_detail(result["planner_request"], result["planner_result"])
         log_attempt_event(event_type="planner_deferred", status="deferred", detail=detail)
+        log_attempt_event(event_type="run_completed", status="deferred", detail=detail)
         _log.info("Planner deferred benchmark: %s", planner_status)
         sys.exit(0)
     if planner_status == PlannerStatus.APPROVAL_REQUIRED.value:

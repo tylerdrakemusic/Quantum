@@ -50,12 +50,15 @@ def monthly_policy() -> dict:
     )
 
 
-@when("next runs are calculated after a summer date", target_fixture="utc_next_runs")
-def calculate_summer_next_runs(monthly_policy: dict) -> dict[str, str]:
+def _monthly_start_boundaries(
+    monthly_policy: dict,
+    now_utc: datetime,
+    task_names: dict[str, str],
+) -> dict[str, str]:
     definitions = dict(sync_policy_tasks(
         monthly_policy,
         PROJECT_ROOT,
-        now_utc=datetime(2026, 8, 2, tzinfo=timezone.utc),
+        now_utc=now_utc,
         task_name_suffix="-bdd",
     ))
     namespace = {"task": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
@@ -63,12 +66,36 @@ def calculate_summer_next_runs(monthly_policy: dict) -> dict[str, str]:
         name: ET.fromstring(definitions[f"{task_name}-bdd"]).findtext(
             "task:Triggers/task:CalendarTrigger/task:StartBoundary", namespaces=namespace,
         )
-        for name, task_name in {
+        for name, task_name in task_names.items()
+    }
+
+
+@when("next runs are calculated after a summer date", target_fixture="utc_next_runs")
+def calculate_summer_next_runs(monthly_policy: dict) -> dict[str, str]:
+    return _monthly_start_boundaries(
+        monthly_policy,
+        datetime(2026, 8, 2, tzinfo=timezone.utc),
+        {
             "cache": "QuantumCacheFill_Monthly",
             "shor": "ShorsMonthlyBench",
             "vqe": "VQEMonthlyBench",
-        }.items()
-    }
+        },
+    )
+
+
+@when(
+    "next runs are calculated after a Mountain standard-time date",
+    target_fixture="standard_time_next_runs",
+)
+def calculate_standard_time_next_runs(monthly_policy: dict) -> dict[str, str]:
+    return _monthly_start_boundaries(
+        monthly_policy,
+        datetime(2026, 11, 2, 7, tzinfo=timezone.utc),
+        {
+            "cache": "QuantumCacheFill_Monthly",
+            "shor": "ShorsMonthlyBench",
+        },
+    )
 
 
 @then("cache fill, Shor, and VQE resolve to their configured UTC instants")
@@ -77,6 +104,14 @@ def assert_utc_next_runs(utc_next_runs: dict[str, str]) -> None:
         "cache": "2026-09-01T07:00:00Z",
         "shor": "2026-09-01T08:00:00Z",
         "vqe": "2026-08-15T03:00:00Z",
+    }
+
+
+@then("cache fill and Shor resolve to their configured UTC instants")
+def assert_standard_time_utc_next_runs(standard_time_next_runs: dict[str, str]) -> None:
+    assert standard_time_next_runs == {
+        "cache": "2026-12-01T07:00:00Z",
+        "shor": "2026-12-01T08:00:00Z",
     }
 
 
@@ -232,3 +267,63 @@ def assert_shor_success(shor_run_state: dict[str, object]) -> None:
     detail = json.loads(terminal["detail"])
     assert terminal["status"] == "succeeded"
     assert detail["attempt_id"]
+
+
+@given(
+    "an out-of-window Shor run and an isolated Quantum database",
+    target_fixture="deferred_shor_state",
+)
+def out_of_window_shor_run(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_quantum_db: Path,
+) -> dict[str, object]:
+    args = SimpleNamespace(
+        n=15,
+        max_qpu_seconds=300,
+        dry_run=False,
+        defer_reason="",
+        manual_override_note="",
+        approved=True,
+        scheduled=True,
+        now_utc="2026-09-01T09:00:01Z",
+    )
+    fake_circuit = SimpleNamespace(depth=lambda: 1, count_ops=lambda: {"x": 1})
+    monkeypatch.setattr(shors, "_parse_args", lambda: args)
+    monkeypatch.setattr(shors, "_build_shor_circuit_n15", lambda _n_count: (fake_circuit, 8))
+    monkeypatch.setattr(
+        shors,
+        "_load_backend_snapshots",
+        lambda *_args: pytest.fail("out-of-window plans must not read backend health"),
+    )
+    monkeypatch.setattr(
+        shors,
+        "_get_ibm_credentials",
+        lambda: pytest.fail("out-of-window plans must not access provider credentials"),
+    )
+    return {"exit_code": -1}
+
+
+@when("the scheduled Shor benchmark is planned", target_fixture="deferred_shor_state")
+def plan_out_of_window_shor(deferred_shor_state: dict[str, object]) -> dict[str, object]:
+    with pytest.raises(SystemExit) as exc_info:
+        shors.main()
+    deferred_shor_state["exit_code"] = int(exc_info.value.code)
+    deferred_shor_state["events"] = _policy_events()
+    return deferred_shor_state
+
+
+@then("it records a deferred terminal outcome without reporting success")
+def assert_shor_terminal_deferred(deferred_shor_state: dict[str, object]) -> None:
+    events = deferred_shor_state["events"]
+    assert deferred_shor_state["exit_code"] == 0
+    assert any(
+        event["event_type"] == "planner_deferred" and event["status"] == "deferred"
+        for event in events
+    )
+    terminal_events = [
+        event for event in events
+        if event["policy_id"] == shors.POLICY_ID
+        and event["event_type"] == "run_completed"
+    ]
+    assert [event["status"] for event in terminal_events] == ["deferred"]
+    assert all(event["status"] != "succeeded" for event in events)
