@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
@@ -41,7 +42,7 @@ class _FakeSamplerResult:
         return self._counts
 
 
-def _patch_ibm_connect(monkeypatch):
+def _patch_ibm_connect(monkeypatch, runtime_exceptions=None):
     monkeypatch.setattr(module, "_get_ibm_credentials", lambda: ("key", "instance"))
 
     fake_backend = MagicMock()
@@ -66,6 +67,11 @@ def _patch_ibm_connect(monkeypatch):
     ibm_runtime = MagicMock()
     ibm_runtime.QiskitRuntimeService.return_value = MagicMock()
     monkeypatch.setitem(sys.modules, "qiskit_ibm_runtime", ibm_runtime)
+    if runtime_exceptions is None:
+        runtime_exceptions = ModuleType("qiskit_ibm_runtime.exceptions")
+        for name in ("JobTimeoutError", "RuntimeJobMaxTimeoutError", "RuntimeJobTimeoutError"):
+            setattr(runtime_exceptions, name, type(name, (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "qiskit_ibm_runtime.exceptions", runtime_exceptions)
     return ibm_runtime
 
 
@@ -230,13 +236,51 @@ def test_run_fill_wired_through_retry_supervisor_records_ibm_job_status(
     assert total_bits > 0
 
     conn = init_db.get_connection()
-    row = conn.execute(
-        "SELECT status, backend FROM job_retry_status WHERE job_id = ?", ("fill-cache-1",)
-    ).fetchone()
+    rows = conn.execute(
+        "SELECT job_id, status, backend FROM job_retry_status"
+    ).fetchall()
     conn.close()
+    assert len(rows) == 1
+    row = rows[0]
     assert row is not None
+    assert row["job_id"].startswith("fill-cache-")
+    assert row["job_id"].endswith("-1")
     assert row["status"] == "succeeded"
     assert row["backend"] == "ibm"
+
+
+def test_run_fill_uses_distinct_job_ids_across_invocations(
+    monkeypatch, quantum_db_env, tmp_path,
+):
+    root = tmp_path / "quantum"
+    live_dir = root / "src" / "data" / "liveCache"
+    monkeypatch.setattr(module, "_ROOT", root)
+    monkeypatch.setattr(module, "_LIVE_DIR", live_dir)
+    monkeypatch.setattr(module, "_LIVE_CACHE", live_dir / "ty_string_cache.txt")
+    monkeypatch.setattr(module, "_BACKUP_DIR", root / "qbackups")
+    monkeypatch.setattr(module, "_CAPACITY_BASELINE", live_dir / "capacity.txt")
+
+    ibm_runtime = _patch_ibm_connect(monkeypatch)
+    fake_job = MagicMock()
+    fake_job.result.return_value = _FakeSamplerResult({"01": 2}, execution_seconds=5.0)
+    sampler = MagicMock(run=MagicMock(return_value=fake_job))
+    ibm_runtime.SamplerV2.return_value = sampler
+
+    assert module.run_fill(max_qpu_seconds=5, dry_run=False) > 0
+    assert module.run_fill(max_qpu_seconds=5, dry_run=False) > 0
+
+    conn = init_db.get_connection()
+    rows = conn.execute(
+        "SELECT job_id, status FROM job_retry_status ORDER BY job_id"
+    ).fetchall()
+    conn.close()
+
+    job_ids = [row["job_id"] for row in rows]
+    assert len(job_ids) == 2
+    assert len(set(job_ids)) == 2
+    assert all(job_id.startswith("fill-cache-") and job_id.endswith("-1") for job_id in job_ids)
+    assert len({job_id.rsplit("-", 1)[0] for job_id in job_ids}) == 2
+    assert all(row["status"] == "succeeded" for row in rows)
 
 
 def test_run_fill_stops_successfully_at_supervisor_ibm_call_cap(
@@ -309,7 +353,7 @@ def test_run_fill_permanent_job_failure_raises_but_keeps_partial_success(
     import job_retry_supervisor
     monkeypatch.setattr(job_retry_supervisor.time, "sleep", lambda *_a, **_kw: None)
 
-    with pytest.raises(RuntimeError, match="fill-cache-2"):
+    with pytest.raises(RuntimeError, match=r"fill-cache-.+-2"):
         module.run_fill(max_qpu_seconds=100, dry_run=False)
 
     live_cache = live_dir / "ty_string_cache.txt"
@@ -321,6 +365,112 @@ def test_run_fill_permanent_job_failure_raises_but_keeps_partial_success(
         "SELECT job_id, status FROM job_retry_status ORDER BY job_id"
     ).fetchall()
     conn.close()
-    statuses = {r["job_id"]: r["status"] for r in rows}
-    assert statuses["fill-cache-1"] == "succeeded"
-    assert statuses["fill-cache-2"] == "failed"
+    assert len({r["job_id"].rsplit("-", 1)[0] for r in rows}) == 1
+    statuses = {r["job_id"].rsplit("-", 1)[1]: r["status"] for r in rows}
+    assert set(statuses) == {"1", "2"}
+    assert statuses["1"] == "succeeded"
+    assert statuses["2"] == "failed"
+
+
+@pytest.mark.parametrize(
+    "timeout_type",
+    [
+        pytest.param("builtin", id="builtin-timeout"),
+        pytest.param("ibm-runtime", id="ibm-runtime-timeout"),
+    ],
+)
+def test_main_records_terminal_failure_when_provider_result_wait_times_out(
+    monkeypatch,
+    quantum_db_env,
+    tmp_path,
+    request,
+    timeout_type,
+):
+    timeout_error_type = TimeoutError
+    runtime_exceptions = None
+    original_runtime_modules = {
+        name: value
+        for name, value in sys.modules.items()
+        if name == "qiskit_ibm_runtime" or name.startswith("qiskit_ibm_runtime.")
+    }
+
+    def restore_runtime_modules():
+        monkeypatch.undo()
+        for name in tuple(sys.modules):
+            if (
+                (name == "qiskit_ibm_runtime" or name.startswith("qiskit_ibm_runtime."))
+                and name not in original_runtime_modules
+            ):
+                sys.modules.pop(name, None)
+        sys.modules.update(original_runtime_modules)
+
+    request.addfinalizer(restore_runtime_modules)
+    from qiskit_ibm_runtime import exceptions as runtime_exceptions
+    from qiskit_ibm_runtime.exceptions import RuntimeJobTimeoutError
+
+    if timeout_type == "ibm-runtime":
+        timeout_error_type = RuntimeJobTimeoutError
+
+    root = tmp_path / "quantum"
+    live_dir = root / "src" / "data" / "liveCache"
+    live_dir.mkdir(parents=True)
+    live_cache = live_dir / "ty_string_cache.txt"
+    live_cache.write_text("11\n", encoding="utf-8")
+    monkeypatch.setattr(module, "_ROOT", root)
+    monkeypatch.setattr(module, "_LIVE_DIR", live_dir)
+    monkeypatch.setattr(module, "_LIVE_CACHE", live_cache)
+    monkeypatch.setattr(module, "_BACKUP_DIR", root / "qbackups")
+    monkeypatch.setattr(module, "_CAPACITY_BASELINE", live_dir / "capacity.txt")
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: type(
+            "Args",
+            (),
+            {"status": False, "dry_run": False, "max_qpu_seconds": 180},
+        )(),
+    )
+
+    ibm_runtime = _patch_ibm_connect(monkeypatch, runtime_exceptions)
+    fake_job = MagicMock()
+    observed_timeouts = []
+
+    def timeout_result(*, timeout=None):
+        observed_timeouts.append(timeout)
+        raise timeout_error_type("provider wait expired")
+
+    fake_job.result.side_effect = timeout_result
+    sampler = MagicMock()
+    sampler.run.return_value = fake_job
+    ibm_runtime.SamplerV2.return_value = sampler
+
+    import job_retry_supervisor
+    monkeypatch.setattr(job_retry_supervisor.time, "sleep", lambda *_args: None)
+
+    with pytest.raises(SystemExit) as exit_info:
+        module.main()
+
+    assert exit_info.value.code == 1
+    sampler.run.assert_called_once()
+    assert len(observed_timeouts) == 1
+    assert 0 < observed_timeouts[0] < 600
+    fake_job.cancel.assert_not_called()
+    assert live_cache.read_text(encoding="utf-8") == "11\n"
+
+    conn = init_db.get_connection()
+    terminal = conn.execute(
+        "SELECT status, detail FROM policy_events "
+        "WHERE policy_id = ? AND event_type = 'run_completed'",
+        (module.POLICY_ID,),
+    ).fetchone()
+    retry_status = conn.execute(
+        "SELECT job_id, status, error_msg FROM job_retry_status"
+    ).fetchone()
+    conn.close()
+
+    assert terminal["status"] == "failed"
+    assert "provider cancellation is not inferred" in terminal["detail"]
+    assert retry_status["job_id"].startswith("fill-cache-")
+    assert retry_status["job_id"].endswith("-1")
+    assert retry_status["status"] == "failed"
+    assert "provider wait expired" in retry_status["error_msg"]

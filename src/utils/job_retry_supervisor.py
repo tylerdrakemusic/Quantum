@@ -34,6 +34,10 @@ _DEFAULT_MAX_ATTEMPTS = 3
 _DEFAULT_IBM_CALL_CAP = 10
 
 
+class JobWaitTimeout(TimeoutError):
+    """The local provider-result wait expired; provider cancellation is unknown."""
+
+
 class JobStatus(str, Enum):
     """Lifecycle status of a supervised job."""
 
@@ -146,6 +150,9 @@ class RetrySupervisor:
                     self._ibm_calls_made += 1
                 job.run_fn()
                 self._update_status(job, JobStatus.SUCCEEDED, attempt, None)
+                return
+            except JobWaitTimeout as exc:
+                self._update_status(job, JobStatus.FAILED, attempt, str(exc))
                 return
             except Exception as exc:  # noqa: BLE001 — supervisor must catch all job errors
                 error_msg = str(exc)

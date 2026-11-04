@@ -5,6 +5,11 @@ Feature: Quantum scheduled run outcomes
     When next runs are calculated after a summer date
     Then cache fill, Shor, and VQE resolve to their configured UTC instants
 
+  Scenario: Monthly policies remain UTC after a Mountain standard-time date
+    Given the configured monthly Quantum schedules
+    When next runs are calculated after a Mountain standard-time date
+    Then cache fill and Shor resolve to their configured UTC instants
+
   Scenario: Cache fill records success only after verified bits are persisted
     Given a successful cache-fill provider result and an isolated Quantum database
     When the cache-fill runner completes
@@ -19,3 +24,8 @@ Feature: Quantum scheduled run outcomes
     Given a scheduled Shor run with the policy approval and an isolated Quantum database
     When the Shor scheduled runner completes with factors 3 and 5
     Then it records an approved hardware success and exits zero
+
+  Scenario: Out-of-window Shor invocation records a terminal deferred outcome
+    Given an out-of-window Shor run and an isolated Quantum database
+    When the scheduled Shor benchmark is planned
+    Then it records a deferred terminal outcome without reporting success

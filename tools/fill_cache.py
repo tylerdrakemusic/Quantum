@@ -71,6 +71,7 @@ DEFAULT_MAX_QPU_SECONDS: int = execution_policy.policy_qpu_cap_seconds(POLICY_ID
 # On ibm_fez (Eagle 156Q) each job takes ~5–30s QPU time.
 N_QUBITS: int   = 127
 N_SHOTS:  int   = 4096
+RUN_FINALIZATION_MARGIN_SECONDS: int = 30
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -310,9 +311,28 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
         _logger.info("Would write to: %s", _LIVE_CACHE)
         return 0
 
+    policy = execution_policy.load_policy_config()
+    run_timeout_seconds = int(policy.get("run_timeouts_seconds", {}).get(POLICY_ID, 0))
+    task_timeout_seconds = int(
+        policy.get("scheduled_task_actions", {})
+        .get(POLICY_ID, {})
+        .get("execution_time_limit_seconds", 0)
+    )
+    wait_budget_seconds = min(run_timeout_seconds, task_timeout_seconds) - (
+        RUN_FINALIZATION_MARGIN_SECONDS
+    )
+    if wait_budget_seconds <= 0:
+        raise RuntimeError("Cache-fill run timeout must exceed the finalization margin.")
+    attempt_deadline = time.monotonic() + wait_budget_seconds
+
     # ----- Import IBM runtime -----
     try:
         from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2 as Sampler  # type: ignore[import]
+        from qiskit_ibm_runtime.exceptions import (
+            JobTimeoutError,
+            RuntimeJobMaxTimeoutError,
+            RuntimeJobTimeoutError,
+        )
         from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager  # type: ignore[import]
     except ImportError:
         raise ImportError(
@@ -339,9 +359,10 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
 
     # ----- Job loop — supervised via RetrySupervisor (retry/backoff + IBM call cap) -----
     import init_db
-    from job_retry_supervisor import Job, JobStatus, RetrySupervisor
+    from job_retry_supervisor import Job, JobStatus, JobWaitTimeout, RetrySupervisor
 
     all_bitstrings: list[str] = []
+    run_token = uuid.uuid4().hex
     jobs_submitted = 0
     jobs_completed = 0
     qpu_seconds_consumed = 0.0
@@ -357,7 +378,7 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
     while qpu_seconds_consumed < max_qpu_seconds and supervisor.remaining_ibm_calls > 0:
         remaining = max_qpu_seconds - qpu_seconds_consumed
         jobs_submitted += 1
-        job_id = f"fill-cache-{jobs_submitted}"
+        job_id = f"fill-cache-{run_token}-{jobs_submitted}"
         _logger.info(
             "Submitting job %d  (QPU used: %.1fs / %ds, remaining: %.1fs)",
             jobs_submitted, qpu_seconds_consumed, max_qpu_seconds, remaining,
@@ -366,9 +387,31 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
         outcome: dict = {}
 
         def _run_fn(sampler=sampler, transpiled=transpiled, outcome=outcome) -> None:
+            if time.monotonic() >= attempt_deadline:
+                raise JobWaitTimeout(
+                    "Cache-fill attempt exceeded its bounded wait before submitting "
+                    "another IBM job."
+                )
             job = sampler.run([transpiled], shots=N_SHOTS)
             poll_start = time.monotonic()
-            result = job.result()
+            wait_timeout = attempt_deadline - poll_start
+            if wait_timeout <= 0:
+                raise JobWaitTimeout(
+                    "Cache-fill attempt exceeded its bounded wait after IBM submission; "
+                    "provider cancellation is not inferred."
+                )
+            try:
+                result = job.result(timeout=wait_timeout)
+            except (
+                TimeoutError,
+                JobTimeoutError,
+                RuntimeJobMaxTimeoutError,
+                RuntimeJobTimeoutError,
+            ) as exc:
+                raise JobWaitTimeout(
+                    f"IBM provider result wait exceeded {wait_timeout:.1f}s; "
+                    f"provider error: {exc}; provider cancellation is not inferred."
+                ) from exc
             wall_elapsed = time.monotonic() - poll_start
             try:
                 usage = result.metadata.get("execution", {})
