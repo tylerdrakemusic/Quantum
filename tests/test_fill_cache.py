@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
@@ -41,7 +42,7 @@ class _FakeSamplerResult:
         return self._counts
 
 
-def _patch_ibm_connect(monkeypatch):
+def _patch_ibm_connect(monkeypatch, runtime_exceptions=None):
     monkeypatch.setattr(module, "_get_ibm_credentials", lambda: ("key", "instance"))
 
     fake_backend = MagicMock()
@@ -66,6 +67,11 @@ def _patch_ibm_connect(monkeypatch):
     ibm_runtime = MagicMock()
     ibm_runtime.QiskitRuntimeService.return_value = MagicMock()
     monkeypatch.setitem(sys.modules, "qiskit_ibm_runtime", ibm_runtime)
+    if runtime_exceptions is None:
+        runtime_exceptions = ModuleType("qiskit_ibm_runtime.exceptions")
+        for name in ("JobTimeoutError", "RuntimeJobMaxTimeoutError", "RuntimeJobTimeoutError"):
+            setattr(runtime_exceptions, name, type(name, (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "qiskit_ibm_runtime.exceptions", runtime_exceptions)
     return ibm_runtime
 
 
@@ -366,11 +372,45 @@ def test_run_fill_permanent_job_failure_raises_but_keeps_partial_success(
     assert statuses["2"] == "failed"
 
 
+@pytest.mark.parametrize(
+    "timeout_type",
+    [
+        pytest.param("builtin", id="builtin-timeout"),
+        pytest.param("ibm-runtime", id="ibm-runtime-timeout"),
+    ],
+)
 def test_main_records_terminal_failure_when_provider_result_wait_times_out(
     monkeypatch,
     quantum_db_env,
     tmp_path,
+    request,
+    timeout_type,
 ):
+    timeout_error_type = TimeoutError
+    runtime_exceptions = None
+    original_runtime_modules = {
+        name: value
+        for name, value in sys.modules.items()
+        if name == "qiskit_ibm_runtime" or name.startswith("qiskit_ibm_runtime.")
+    }
+
+    def restore_runtime_modules():
+        monkeypatch.undo()
+        for name in tuple(sys.modules):
+            if (
+                (name == "qiskit_ibm_runtime" or name.startswith("qiskit_ibm_runtime."))
+                and name not in original_runtime_modules
+            ):
+                sys.modules.pop(name, None)
+        sys.modules.update(original_runtime_modules)
+
+    request.addfinalizer(restore_runtime_modules)
+    from qiskit_ibm_runtime import exceptions as runtime_exceptions
+    from qiskit_ibm_runtime.exceptions import RuntimeJobTimeoutError
+
+    if timeout_type == "ibm-runtime":
+        timeout_error_type = RuntimeJobTimeoutError
+
     root = tmp_path / "quantum"
     live_dir = root / "src" / "data" / "liveCache"
     live_dir.mkdir(parents=True)
@@ -391,13 +431,13 @@ def test_main_records_terminal_failure_when_provider_result_wait_times_out(
         )(),
     )
 
-    ibm_runtime = _patch_ibm_connect(monkeypatch)
+    ibm_runtime = _patch_ibm_connect(monkeypatch, runtime_exceptions)
     fake_job = MagicMock()
     observed_timeouts = []
 
     def timeout_result(*, timeout=None):
         observed_timeouts.append(timeout)
-        raise TimeoutError("provider wait expired")
+        raise timeout_error_type("provider wait expired")
 
     fake_job.result.side_effect = timeout_result
     sampler = MagicMock()
@@ -433,3 +473,4 @@ def test_main_records_terminal_failure_when_provider_result_wait_times_out(
     assert retry_status["job_id"].startswith("fill-cache-")
     assert retry_status["job_id"].endswith("-1")
     assert retry_status["status"] == "failed"
+    assert "provider wait expired" in retry_status["error_msg"]

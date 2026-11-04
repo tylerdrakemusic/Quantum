@@ -328,6 +328,11 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
     # ----- Import IBM runtime -----
     try:
         from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2 as Sampler  # type: ignore[import]
+        from qiskit_ibm_runtime.exceptions import (
+            JobTimeoutError,
+            RuntimeJobMaxTimeoutError,
+            RuntimeJobTimeoutError,
+        )
         from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager  # type: ignore[import]
     except ImportError:
         raise ImportError(
@@ -397,10 +402,15 @@ def run_fill(max_qpu_seconds: int, dry_run: bool = False) -> int:
                 )
             try:
                 result = job.result(timeout=wait_timeout)
-            except TimeoutError as exc:
+            except (
+                TimeoutError,
+                JobTimeoutError,
+                RuntimeJobMaxTimeoutError,
+                RuntimeJobTimeoutError,
+            ) as exc:
                 raise JobWaitTimeout(
                     f"IBM provider result wait exceeded {wait_timeout:.1f}s; "
-                    "provider cancellation is not inferred."
+                    f"provider error: {exc}; provider cancellation is not inferred."
                 ) from exc
             wall_elapsed = time.monotonic() - poll_start
             try:
